@@ -19,6 +19,7 @@ Package manager: **pnpm** (see `pnpm-lock.yaml`).
 - **SEMPRE** use **React Testing Library** e a skill `react-testing-library` ao escrever testes.
 - Foque em testar **componentes** (renderização, interação do usuário, acessibilidade via queries por role/label/text).
 - Banco de dados **sempre mockado** nos testes. Nunca suba container/DB real — mocke o client/queries diretamente no teste.
+- Mocke o client Drizzle (`db`) diretamente. Não use `pg-mem` nem container.
 - **SEMPRE** valide o trabalho feito rodando os testes antes de considerar a tarefa concluída.
 
 ## Stack
@@ -27,6 +28,8 @@ Package manager: **pnpm** (see `pnpm-lock.yaml`).
 - TypeScript (strict), Tailwind CSS v4 (`@tailwindcss/postcss`)
 - ESLint (`eslint-config-next`) + Prettier
 - Zod v4 para schemas/validação
+- PostgreSQL (banco de dados)
+- Drizzle ORM + drizzle-kit (migrations/schema)
 
 Path alias: `@/*` → `./*` (raiz do projeto).
 
@@ -58,6 +61,18 @@ Path alias: `@/*` → `./*` (raiz do projeto).
 
 - **SEMPRE** use **dayjs** para formatar e manipular datas em qualquer parte da aplicação. Nunca use `Date` nativo, `toLocaleDateString`, `toISOString` ou similares para apresentação de datas ao usuário.
 
+### Banco de Dados
+
+- **SEMPRE** use **Drizzle ORM** para queries e schema. Nunca SQL cru exceto em migrations geradas.
+- Schemas em `db/schema/` (um arquivo por tabela/domínio), client em `db/index.ts`.
+- Migrations via `drizzle-kit generate` + `drizzle-kit migrate`. Nunca edite SQL gerado à mão.
+- Tipos inferidos via `$inferSelect` / `$inferInsert` — nunca redeclare manualmente.
+- Use Context7 (`/drizzle-team/drizzle-orm`) antes de escrever query não-trivial.
+
 ### Server Actions
 
 - **SEMPRE** crie Server Actions com `next-safe-action`.
+
+### TypeScript
+
+- **NUNCA** use any.
