@@ -52,6 +52,7 @@ Path alias: `@/*` → `./*` (raiz do projeto).
 
 - **SEMPRE** React Hook Form + Zod.
 - **SEMPRE** escreva mensagens de erro de validação Zod em **português brasileiro**, de forma amigável e acionável. Exemplos: `"Este campo é obrigatório."`, `"E-mail inválido."`, `"Deve ter pelo menos 8 caracteres."`. Nunca deixe mensagens padrão em inglês do Zod aparecerem para o usuário. Schemas internos/servidor (env, webhooks, UUIDs internos) estão isentos.
+- **NUNCA** use APIs de string depreciadas do Zod v4 (`z.string().email()`, `z.string().url()`, `z.string().uuid()`, `z.string().cuid()`, `z.string().ip()`, etc). Use os top-level equivalentes: `z.email()`, `z.url()`, `z.uuid()`, `z.cuid()`, `z.ipv4()`/`z.ipv6()`. Passe a mensagem customizada como argumento: `z.email("E-mail inválido.")`.
 
 ### Estilização
 
