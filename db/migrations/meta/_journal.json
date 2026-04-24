@@ -8,6 +8,13 @@
       "when": 1776987305432,
       "tag": "0000_boring_black_cat",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1776989066917,
+      "tag": "0001_daily_timeslip",
+      "breakpoints": true
     }
   ]
 }

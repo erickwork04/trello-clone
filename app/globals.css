@@ -24,6 +24,16 @@
   --auth-bg: #0f172a;
   --auth-card-border: rgba(255, 255, 255, 0.08);
   --auth-accent: #6366f1;
+
+  /* Column color palette */
+  --column-slate: #64748b;
+  --column-blue: #3b82f6;
+  --column-green: #10b981;
+  --column-amber: #f59e0b;
+  --column-red: #ef4444;
+  --column-purple: #8b5cf6;
+  --column-pink: #ec4899;
+  --column-cyan: #06b6d4;
 }
 
 @theme inline {

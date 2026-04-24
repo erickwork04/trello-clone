@@ -1,0 +1,52 @@
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
+import { auth } from "@/lib/auth";
+import { db } from "@/db";
+import { board } from "@/db/schema/board";
+import { boardColumn } from "@/db/schema/column";
+import { eq, asc } from "drizzle-orm";
+import { BoardView } from "@/components/board/board-view";
+
+export default async function BoardPage() {
+  const session = await auth.api.getSession({
+    headers: await headers(),
+  });
+
+  if (!session) {
+    redirect("/login");
+  }
+
+  let [userBoard] = await db
+    .select()
+    .from(board)
+    .where(eq(board.userId, session.user.id))
+    .limit(1);
+
+  if (!userBoard) {
+    const [created] = await db
+      .insert(board)
+      .values({ userId: session.user.id, title: "Meu Board" })
+      .onConflictDoNothing({ target: board.userId })
+      .returning();
+
+    if (!created) {
+      [userBoard] = await db
+        .select()
+        .from(board)
+        .where(eq(board.userId, session.user.id))
+        .limit(1);
+    } else {
+      userBoard = created;
+    }
+  }
+
+  if (!userBoard) redirect("/login");
+
+  const columns = await db
+    .select()
+    .from(boardColumn)
+    .where(eq(boardColumn.boardId, userBoard.id))
+    .orderBy(asc(boardColumn.position));
+
+  return <BoardView board={userBoard} columns={columns} />;
+}

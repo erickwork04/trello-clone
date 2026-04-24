@@ -78,6 +78,7 @@ export const userRelations = relations(user, ({ many }) => ({
   accounts: many(account),
 }));
 
+
 export const sessionRelations = relations(session, ({ one }) => ({
   user: one(user, {
     fields: [session.userId],
