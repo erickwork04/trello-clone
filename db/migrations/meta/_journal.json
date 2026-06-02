@@ -15,6 +15,13 @@
       "when": 1776989066917,
       "tag": "0001_daily_timeslip",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1776991369466,
+      "tag": "0002_fluffy_daimon_hellstrom",
+      "breakpoints": true
     }
   ]
 }
