@@ -5,6 +5,7 @@
     "scripts": {
         "dev": "next dev",
         "build": "next build",
+        "prestart": "next build",
         "start": "next start",
         "lint": "eslint",
         "db:generate": "drizzle-kit generate",
