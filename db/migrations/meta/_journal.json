@@ -22,6 +22,13 @@
       "when": 1776991369466,
       "tag": "0002_fluffy_daimon_hellstrom",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1789348901925,
+      "tag": "0003_black_cobalt_man",
+      "breakpoints": true
     }
   ]
 }
