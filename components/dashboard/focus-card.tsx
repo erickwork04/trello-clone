@@ -3,8 +3,9 @@ import { AreaBadge } from './area-badge'
 
 interface FocusCardProps {
     title: string
-    description?: string
+    description?: string | null
     area: 'Trabalho' | 'Estudos' | 'Pessoal'
+    time?: string | null
     estimatedTime?: string
 }
 
@@ -12,6 +13,7 @@ export function FocusCard({
     title,
     description,
     area,
+    time,
     estimatedTime,
 }: FocusCardProps) {
     return (
@@ -59,10 +61,16 @@ export function FocusCard({
                         <div className="mt-3 flex items-center gap-3">
                             <AreaBadge area={area} />
 
-                            {estimatedTime && (
+                            {time && (
                                 <span className="flex items-center gap-1 text-xs text-slate-500">
                                     <Clock3 className="size-3.5" />
-                                    {estimatedTime}
+                                    {time.slice(0, 5)}
+                                </span>
+                            )}
+
+                            {estimatedTime && (
+                                <span className="text-xs text-slate-500">
+                                    • {estimatedTime}
                                 </span>
                             )}
                         </div>

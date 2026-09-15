@@ -59,8 +59,32 @@ export default async function HojePage() {
         INBOX: 'Pessoal',
     } as const
 
-    const focusTask =
-        topPriorities[0] ?? todayTasks[0] ?? null
+    const focusTask = topPriorities[0] ?? todayTasks[0] ?? null
+
+    function getGreeting() {
+        const hour = new Date().getHours()
+
+        if (hour < 12) {
+            return {
+                text: 'Bom dia',
+                emoji: '☀️',
+            }
+        }
+
+        if (hour < 18) {
+            return {
+                text: 'Boa tarde',
+                emoji: '🌤️',
+            }
+        }
+
+        return {
+            text: 'Boa noite',
+            emoji: '🌙',
+        }
+    }
+
+    const greeting = getGreeting()
 
 
     return (
@@ -69,7 +93,7 @@ export default async function HojePage() {
                 <div className="mb-6 flex items-start justify-between gap-6">
                     <div>
                         <h1 className="text-3xl font-bold tracking-tight text-slate-900">
-                            Bom dia, {userName} ☀️
+                            {greeting.text}, {userName} {greeting.emoji}
                         </h1>
 
                         <p className="mt-1 text-base font-medium text-slate-500">
@@ -95,10 +119,9 @@ export default async function HojePage() {
                         {focusTask ? (
                             <FocusCard
                                 title={focusTask.title}
-                                description={
-                                    focusTask.description ?? undefined
-                                }
+                                description={focusTask.description}
                                 area={areaMap[focusTask.area]}
+                                time={focusTask.plannedTime}
                                 estimatedTime={
                                     focusTask.estimatedMinutes
                                         ? `${focusTask.estimatedMinutes} min`
@@ -128,9 +151,12 @@ export default async function HojePage() {
                                             key={task.id}
                                             id={task.id}
                                             title={task.title}
+                                            description={task.description}
                                             area={areaMap[task.area]}
+                                            time={task.plannedTime}
+                                            completed={task.status === 'DONE'}
                                             topPriority={task.isTopPriority}
-                                            allowPriority
+                                            allowPriority={task.status !== 'DONE'}
                                         />
                                     ))
                                 ) : (
@@ -161,9 +187,12 @@ export default async function HojePage() {
                                             key={task.id}
                                             id={task.id}
                                             title={task.title}
+                                            description={task.description}
                                             area={areaMap[task.area]}
+                                            time={task.plannedTime}
+                                            completed={task.status === 'DONE'}
                                             topPriority={task.isTopPriority}
-                                            allowPriority
+                                            allowPriority={task.status !== 'DONE'}
                                         />
                                     ))
                                 ) : (
@@ -191,8 +220,12 @@ export default async function HojePage() {
                                             key={task.id}
                                             id={task.id}
                                             title={task.title}
+                                            description={task.description}
                                             area={areaMap[task.area]}
-                                            completed
+                                            time={task.plannedTime}
+                                            completed={task.status === 'DONE'}
+                                            topPriority={task.isTopPriority}
+                                            allowPriority={task.status !== 'DONE'}
                                         />
                                     ))
                                 ) : (

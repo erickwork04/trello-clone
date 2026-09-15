@@ -13,6 +13,8 @@ interface CreateTaskInput {
     area?: 'WORK' | 'STUDIES' | 'PERSONAL'
     priority?: 'LOW' | 'MEDIUM' | 'HIGH'
     plannedDate?: string
+    description?: string
+    plannedTime?: string
 }
 
 export async function createTask(input: CreateTaskInput) {
@@ -36,6 +38,7 @@ export async function createTask(input: CreateTaskInput) {
             status: 'BACKLOG',
             priority: 'MEDIUM',
             plannedDate: null,
+            plannedTime: null,
         })
 
         revalidatePath('/hoje')
@@ -62,10 +65,12 @@ export async function createTask(input: CreateTaskInput) {
     await db.insert(task).values({
         userId: session.user.id,
         title: input.title.trim(),
+        description: input.description?.trim() || null,
         area: input.area,
         priority: input.priority,
         status: isToday ? 'TODAY' : 'WEEK',
         plannedDate,
+        plannedTime: input.plannedTime || null,
     })
 
     revalidatePath('/hoje')

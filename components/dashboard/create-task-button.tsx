@@ -57,8 +57,9 @@ export function CreateTaskButton() {
         return `${year}-${month}-${day}`
     }
 
-    const [plannedDate, setPlannedDate] =
-        useState(getTodayString())
+    const [plannedDate, setPlannedDate] = useState(getTodayString())
+    const [description, setDescription] = useState('')
+    const [plannedTime, setPlannedTime] = useState('')
 
     async function handleSubmit() {
         if (!title.trim()) {
@@ -70,18 +71,24 @@ export function CreateTaskButton() {
 
             await createTask({
                 title,
+                description,
                 destination,
-                area:
-                    destination === 'TODAY'
-                        ? area
-                        : undefined,
+
+                area: destination === 'TODAY' ? area : undefined,
+
                 priority:
                     destination === 'TODAY'
                         ? priority
                         : undefined,
+
                 plannedDate:
                     destination === 'TODAY'
                         ? plannedDate
+                        : undefined,
+
+                plannedTime:
+                    destination === 'TODAY'
+                        ? plannedTime
                         : undefined,
             })
 
@@ -91,6 +98,8 @@ export function CreateTaskButton() {
             setPlannedDate(getTodayString())
             setOpen(false)
             setDestination('TODAY')
+            setDescription('')
+            setPlannedTime('')
         } finally {
             setIsSubmitting(false)
         }
@@ -106,232 +115,317 @@ export function CreateTaskButton() {
 
             <PopoverContent
                 align="end"
-                className="w-80 space-y-4"
+                side="left"
+                sideOffset={12}
+                collisionPadding={16}
+                className="max-h-[70vh] w-105 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
             >
-                <div>
-                    <h3 className="font-semibold">
-                        Nova tarefa
-                    </h3>
+                <div className="space-y-4">
+                    <div>
+                        <h3 className="text-base font-semibold text-slate-900">
+                            Nova tarefa
+                        </h3>
 
-                    <p className="text-sm text-muted-foreground">
-                        Adicione rapidamente uma tarefa para hoje.
-                    </p>
-                </div>
-
-                <div className="space-y-2">
-                    <Label htmlFor="title">
-                        Tarefa
-                    </Label>
-
-                    <Input
-                        id="title"
-                        placeholder="Ex.: Finalizar relatório"
-                        value={title}
-                        onChange={(event) =>
-                            setTitle(event.target.value)
-                        }
-                        onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                                handleSubmit()
-                            }
-                        }}
-                    />
-                </div>
-
-                <div className="space-y-2">
-                    <Label>
-                        Onde colocar?
-                    </Label>
-
-                    <div className="grid grid-cols-2 gap-2">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setDestination('TODAY')}
-                            className={
-                                destination === 'TODAY'
-                                    ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
-                                    : ''
-                            }
-                        >
-                            Hoje
-                        </Button>
-
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => setDestination('INBOX')}
-                            className={
-                                destination === 'INBOX'
-                                    ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
-                                    : ''
-                            }
-                        >
-                            Caixa de Entrada
-                        </Button>
+                        <p className="mt-1 text-xs text-slate-500">
+                            Adicione uma tarefa rapidamente.
+                        </p>
                     </div>
-                </div>
 
-                <div className="space-y-2">
-                    <Label>
-                        Área
-                    </Label>
+                    {/* Tarefa */}
+                    <div className="space-y-2">
+                        <Label htmlFor="title">
+                            Tarefa
+                        </Label>
 
-                    <div className="grid grid-cols-3 gap-2">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setArea('WORK')}
-                            className={
-                                area === 'WORK'
-                                    ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
-                                    : ''
+                        <Input
+                            id="title"
+                            placeholder="Ex.: Estudar Next.js"
+                            value={title}
+                            onChange={(event) =>
+                                setTitle(event.target.value)
                             }
-
-                        >
-                            Trabalho
-                        </Button>
-
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setArea('STUDIES')}
-                            className={
-                                area === 'STUDIES'
-                                    ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
-                                    : ''
-                            }
-                        >
-                            Estudos
-                        </Button>
-
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setArea('PERSONAL')}
-                            className={
-                                area === 'PERSONAL'
-                                    ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
-                                    : ''
-                            }
-                        >
-                            Pessoal
-                        </Button>
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    handleSubmit()
+                                }
+                            }}
+                        />
                     </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-2">
+                    {/* Observação */}
+                    <div className="space-y-2">
+                        <Label htmlFor="description">
+                            Observação
+                        </Label>
+
+                        <Input
+                            id="description"
+                            placeholder="Detalhes opcionais..."
+                            value={description}
+                            onChange={(event) =>
+                                setDescription(event.target.value)
+                            }
+                        />
+                    </div>
+
+                    {/* Onde colocar */}
+                    <div className="space-y-2">
+                        <Label>
+                            Onde colocar?
+                        </Label>
+
+                        <div className="grid grid-cols-2 gap-2">
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() =>
+                                    setDestination('TODAY')
+                                }
+                                className={
+                                    destination === 'TODAY'
+                                        ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
+                                        : ''
+                                }
+                            >
+                                Hoje
+                            </Button>
+
+                            <Button
+                                type="button"
+                                variant="outline"
+                                onClick={() =>
+                                    setDestination('INBOX')
+                                }
+                                className={
+                                    destination === 'INBOX'
+                                        ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
+                                        : ''
+                                }
+                            >
+                                Caixa de Entrada
+                            </Button>
+                        </div>
+                    </div>
+
+                    {destination === 'TODAY' && (
+                        <>
+                            {/* Área */}
+                            <div className="space-y-2">
+                                <Label>
+                                    Área
+                                </Label>
+
+                                <div className="grid grid-cols-3 gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() =>
+                                            setArea('WORK')
+                                        }
+                                        className={
+                                            area === 'WORK'
+                                                ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
+                                                : ''
+                                        }
+                                    >
+                                        Trabalho
+                                    </Button>
+
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() =>
+                                            setArea('STUDIES')
+                                        }
+                                        className={
+                                            area === 'STUDIES'
+                                                ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
+                                                : ''
+                                        }
+                                    >
+                                        Estudos
+                                    </Button>
+
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() =>
+                                            setArea('PERSONAL')
+                                        }
+                                        className={
+                                            area === 'PERSONAL'
+                                                ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
+                                                : ''
+                                        }
+                                    >
+                                        Pessoal
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Data rápida + horário lado a lado */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="space-y-2">
+                                    <Label>
+                                        Data rápida
+                                    </Label>
+
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() =>
+                                                setPlannedDate(
+                                                    getTodayString()
+                                                )
+                                            }
+                                            className={
+                                                plannedDate ===
+                                                    getTodayString()
+                                                    ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
+                                                    : ''
+                                            }
+                                        >
+                                            Hoje
+                                        </Button>
+
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() =>
+                                                setPlannedDate(
+                                                    getTomorrowString()
+                                                )
+                                            }
+                                            className={
+                                                plannedDate ===
+                                                    getTomorrowString()
+                                                    ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
+                                                    : ''
+                                            }
+                                        >
+                                            Amanhã
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                <div className="space-y-2">
+                                    <Label htmlFor="plannedTime">
+                                        Horário
+                                    </Label>
+
+                                    <Input
+                                        id="plannedTime"
+                                        type="time"
+                                        value={plannedTime}
+                                        onChange={(event) =>
+                                            setPlannedTime(
+                                                event.target.value
+                                            )
+                                        }
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Data */}
+                            <div className="space-y-2">
+                                <Label htmlFor="plannedDate">
+                                    Data
+                                </Label>
+
+                                <Input
+                                    id="plannedDate"
+                                    type="date"
+                                    value={plannedDate}
+                                    onChange={(event) =>
+                                        setPlannedDate(
+                                            event.target.value
+                                        )
+                                    }
+                                />
+                            </div>
+
+                            {/* Prioridade */}
+                            <div className="space-y-2">
+                                <Label>
+                                    Prioridade
+                                </Label>
+
+                                <div className="grid grid-cols-3 gap-2">
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() =>
+                                            setPriority('LOW')
+                                        }
+                                        className={
+                                            priority === 'LOW'
+                                                ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
+                                                : ''
+                                        }
+                                    >
+                                        Baixa
+                                    </Button>
+
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() =>
+                                            setPriority('MEDIUM')
+                                        }
+                                        className={
+                                            priority === 'MEDIUM'
+                                                ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
+                                                : ''
+                                        }
+                                    >
+                                        Média
+                                    </Button>
+
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() =>
+                                            setPriority('HIGH')
+                                        }
+                                        className={
+                                            priority === 'HIGH'
+                                                ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
+                                                : ''
+                                        }
+                                    >
+                                        Alta
+                                    </Button>
+                                </div>
+                            </div>
+                        </>
+                    )}
+
                     <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                            setPlannedDate(getTodayString())
+                        className="w-full rounded-lg bg-blue-600 text-white transition hover:bg-blue-700"
+                        disabled={
+                            isSubmitting ||
+                            !title.trim() ||
+                            (
+                                destination === 'TODAY' &&
+                                !plannedDate
+                            )
                         }
-                        className={
-                            plannedDate === getTodayString()
-                                ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
-                                : ''
-                        }
+                        onClick={handleSubmit}
                     >
-                        Hoje
-                    </Button>
-
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                            setPlannedDate(getTomorrowString())
-                        }
-                        className={
-                            plannedDate === getTomorrowString()
-                                ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
-                                : ''
-                        }
-                    >
-                        Amanhã
+                        {isSubmitting
+                            ? 'Adicionando...'
+                            : 'Adicionar tarefa'}
                     </Button>
                 </div>
-
-                <div className="space-y-2">
-                    <Label htmlFor="plannedDate">
-                        Quando?
-                    </Label>
-
-                    <Input
-                        id="plannedDate"
-                        type="date"
-                        value={plannedDate}
-                        onChange={(event) =>
-                            setPlannedDate(event.target.value)
-                        }
-                    />
-                </div>
-
-                <div className="space-y-2">
-                    <Label>
-                        Prioridade
-                    </Label>
-
-                    <div className="grid grid-cols-3 gap-2 ">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setPriority('LOW')}
-                            className={
-                                priority === 'LOW'
-                                    ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
-                                    : ''
-                            }
-                        >
-                            Baixa
-                        </Button>
-
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setPriority('MEDIUM')}
-                            className={
-                                priority === 'MEDIUM'
-                                    ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
-                                    : ''
-                            }
-                        >
-                            Média
-                        </Button>
-
-                        <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            onClick={() => setPriority('HIGH')}
-                            className={
-                                priority === 'HIGH'
-                                    ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
-                                    : ''
-                            }
-                        >
-                            Alta
-                        </Button>
-                    </div>
-                </div>
-
-                <Button
-                    className="w-full rounded-lg bg-blue-600 text-white transition hover:bg-blue-700"
-                    disabled={isSubmitting ||
-                        !title.trim() ||
-                        (destination === 'TODAY' && !plannedDate)}
-                    onClick={handleSubmit}
-                >
-                    {isSubmitting ? 'Adicionando...' : 'Adicionar tarefa'}
-
-                </Button>
             </PopoverContent>
         </Popover>
     )

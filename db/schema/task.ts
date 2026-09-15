@@ -8,6 +8,7 @@ import {
     pgEnum,
     pgTable,
     text,
+    time,
     timestamp,
 } from 'drizzle-orm/pg-core'
 
@@ -61,6 +62,8 @@ export const task = pgTable(
         plannedDate: date('planned_date', {
             mode: 'date',
         }),
+
+        plannedTime: time('planned_time'),
 
         dueDate: date('due_date', {
             mode: 'date',

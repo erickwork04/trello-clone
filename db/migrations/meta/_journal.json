@@ -29,6 +29,20 @@
       "when": 1789348901925,
       "tag": "0003_black_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789432970982,
+      "tag": "0004_handy_white_tiger",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1789463190248,
+      "tag": "0005_chubby_veda",
+      "breakpoints": true
     }
   ]
 }
