@@ -43,6 +43,13 @@
       "when": 1789463190248,
       "tag": "0005_chubby_veda",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1789467253827,
+      "tag": "0006_slimy_cargill",
+      "breakpoints": true
     }
   ]
 }

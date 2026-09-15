@@ -1,5 +1,6 @@
-import { Clock3, Play, Target } from 'lucide-react'
+import { Clock3, Target } from 'lucide-react'
 import { AreaBadge } from './area-badge'
+import { FocusTimer } from './focus-timer'
 
 interface FocusCardProps {
     title: string
@@ -7,6 +8,13 @@ interface FocusCardProps {
     area: 'Trabalho' | 'Estudos' | 'Pessoal'
     time?: string | null
     estimatedTime?: string
+    taskId: string
+
+    activeSession?: {
+        id: string
+        taskId: string
+        startedAt: string
+    } | null
 }
 
 export function FocusCard({
@@ -15,6 +23,8 @@ export function FocusCard({
     area,
     time,
     estimatedTime,
+    taskId,
+    activeSession,
 }: FocusCardProps) {
     return (
         <section className="rounded-2xl border border-blue-200 bg-white p-5 shadow-sm">
@@ -77,10 +87,10 @@ export function FocusCard({
                     </div>
                 </div>
 
-                <button className="flex items-center justify-center gap-2 rounded-lg bg-blue-600 px-6 py-3 text-sm font-medium text-white transition hover:bg-blue-700">
-                    <Play className="size-4 fill-current" />
-                    Iniciar foco
-                </button>
+                <FocusTimer
+                    taskId={taskId}
+                    activeSession={activeSession}
+                />
             </div>
         </section>
     )
