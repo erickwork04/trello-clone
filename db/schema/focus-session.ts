@@ -26,6 +26,10 @@ export const focusSession = pgTable(
 
         startedAt: timestamp('started_at').defaultNow().notNull(),
 
+        pausedAt: timestamp('paused_at'),
+
+        accumulatedSeconds: integer('accumulated_seconds').default(0).notNull(),
+
         endedAt: timestamp('ended_at'),
 
         durationSeconds: integer('duration_seconds').default(0).notNull(),

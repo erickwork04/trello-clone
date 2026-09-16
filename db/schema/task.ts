@@ -36,6 +36,13 @@ export const taskPriorityEnum = pgEnum('task_priority', [
     'HIGH',
 ])
 
+export const inboxStageEnum = pgEnum('inbox_stage', [
+    'ARRIVED',
+    'ORGANIZE',
+    'NEXT',
+    'ORGANIZED',
+])
+
 export const task = pgTable(
     'task',
     {
@@ -54,6 +61,8 @@ export const task = pgTable(
         description: text('description'),
 
         area: taskAreaEnum('area').notNull().default('INBOX'),
+
+        inboxStage: inboxStageEnum('inbox_stage').notNull().default('ARRIVED'),
 
         status: taskStatusEnum('status').notNull().default('BACKLOG'),
 

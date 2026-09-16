@@ -8,7 +8,7 @@ import { auth } from '@/lib/auth'
 import { db } from '@/db'
 import { focusSession } from '@/db/schema'
 
-export async function finishFocus(sessionId: string) {
+export async function pauseFocus(sessionId: string) {
     const session = await auth.api.getSession({
         headers: await headers(),
     })
@@ -29,27 +29,22 @@ export async function finishFocus(sessionId: string) {
         )
         .limit(1)
 
-    if (!focus) {
+    if (!focus || focus.pausedAt) {
         return
     }
 
-    const endedAt = new Date()
+    const now = new Date()
 
-    let durationSeconds = focus.accumulatedSeconds
-
-    if (!focus.pausedAt) {
-        durationSeconds += Math.max(
-            0,
-            Math.floor((endedAt.getTime() - focus.startedAt.getTime()) / 1000)
-        )
-    }
+    const currentSeconds = Math.max(
+        0,
+        Math.floor((now.getTime() - focus.startedAt.getTime()) / 1000)
+    )
 
     await db
         .update(focusSession)
         .set({
-            endedAt,
-            durationSeconds,
-            pausedAt: null,
+            pausedAt: now,
+            accumulatedSeconds: focus.accumulatedSeconds + currentSeconds,
         })
         .where(eq(focusSession.id, sessionId))
 

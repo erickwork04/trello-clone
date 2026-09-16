@@ -15,6 +15,8 @@ interface FocusCardProps {
         id: string
         taskId: string
         startedAt: string
+        pausedAt: string | null
+        accumulatedSeconds: number
     } | null
 }
 

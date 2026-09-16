@@ -10,6 +10,7 @@ import {
     GraduationCap,
     UserRound,
     CircleCheckBig,
+    Tags
 } from 'lucide-react'
 
 const items = [
@@ -48,23 +49,28 @@ const items = [
         href: '/concluidas',
         icon: CircleCheckBig,
     },
+    {
+        label: 'Tags',
+        href: '/tags',
+        icon: Tags,
+    }
 ]
 
 export function AppSidebar() {
     const pathname = usePathname()
 
     return (
-        <aside className="hidden h-screen w-64 shrink-0 border-r border-[color:var(--border)] bg-[color:var(--card)] md:flex md:flex-col">
-            <div className="flex h-16 items-center border-b border-[color:var(--border)] px-5">
+        <aside className="hidden h-screen w-64 shrink-0 border-r border-border bg-card md:flex md:flex-col">
+            <div className="flex h-16 items-center border-b border-border px-5">
                 <div className="flex items-center gap-3">
-                    <div className="flex size-8 items-center justify-center rounded-lg bg-[color:var(--primary)]">
+                    <div className="flex size-8 items-center justify-center rounded-lg bg-primary">
                         <div className="flex gap-1">
-                            <span className="h-4 w-1.5 rounded-sm bg-[color:var(--primary-foreground)]" />
-                            <span className="h-3 w-1.5 rounded-sm bg-[color:var(--primary-foreground)]" />
+                            <span className="h-4 w-1.5 rounded-sm bg-primary-foreground" />
+                            <span className="h-3 w-1.5 rounded-sm bg-primary-foreground" />
                         </div>
                     </div>
 
-                    <span className="font-semibold tracking-tight text-[color:var(--foreground)]">
+                    <span className="font-semibold tracking-tight text-foreground">
                         Meu Board
                     </span>
                 </div>

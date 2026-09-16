@@ -14,6 +14,7 @@ import { FocusCard } from '@/components/dashboard/focus-card'
 import { ProgressCard } from '@/components/dashboard/progress-card'
 import { CreateTaskButton } from '@/components/dashboard/create-task-button'
 import { FocusTimeStat } from '@/components/dashboard/focus-time-stat'
+import { LastFocusStat } from '@/components/dashboard/last-focus-stat'
 
 import { getTodayData } from './_queries/get-today-data'
 import { getFocusData } from './_queries/get-focus-data'
@@ -67,7 +68,13 @@ export default async function HojePage() {
         null
 
     function getGreeting() {
-        const hour = new Date().getHours()
+        const hour = Number(
+            new Intl.DateTimeFormat('pt-BR', {
+                hour: '2-digit',
+                hourCycle: 'h23',
+                timeZone: 'America/Sao_Paulo',
+            }).format(new Date())
+        )
 
         if (hour < 12) {
             return {
@@ -113,6 +120,21 @@ export default async function HojePage() {
                             construir a vida que você
                             quer. 💙
                         </p>
+
+                        <div className="mt-4 max-w-2xl rounded-xl bg-blue-50 px-4 py-3">
+                            <p className="text-sm leading-6 text-slate-600">
+                                <span className="font-medium text-blue-700">
+                                    Lamentações 3:21-23
+                                </span>
+
+                                <br />
+
+                                Quero trazer à memória o que me pode dar esperança.
+                                As misericórdias do Senhor são a causa de não sermos consumidos,
+                                porque as suas misericórdias não têm fim, renovam-se cada manhã.
+                                Grande é a tua fidelidade.
+                            </p>
+                        </div>
                     </div>
 
                     <div className="hidden max-w-sm rounded-2xl bg-blue-50 px-6 py-4 text-blue-600 xl:block">
@@ -172,6 +194,11 @@ export default async function HojePage() {
                                                     .activeSession
                                                     .startedAt
                                                     .toISOString(),
+                                            pausedAt:
+                                                focusData.activeSession.pausedAt?.toISOString() ?? null,
+
+                                            accumulatedSeconds:
+                                                focusData.activeSession.accumulatedSeconds,
                                         }
                                         : null
                                 }
@@ -377,12 +404,47 @@ export default async function HojePage() {
                             }
                         />
 
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <FocusTimeStat
-                                totalSeconds={
-                                    focusData.totalSeconds
+                                totalSeconds={focusData.totalSeconds}
+                                activeSession={
+                                    focusData.activeSession
+                                        ? {
+                                            startedAt:
+                                                focusData.activeSession.startedAt.toISOString(),
+                                            pausedAt:
+                                                focusData.activeSession.pausedAt?.toISOString() ?? null,
+                                            accumulatedSeconds:
+                                                focusData.activeSession.accumulatedSeconds,
+                                        }
+                                        : null
                                 }
                             />
+
+                            {focusData.lastFocus ? (
+                                <LastFocusStat
+                                    durationSeconds={
+                                        focusData.lastFocus.durationSeconds
+                                    }
+                                    taskTitle={
+                                        focusData.lastFocus.taskTitle
+                                    }
+                                />
+                            ) : (
+                                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                                    <p className="text-sm text-slate-500">
+                                        Último foco
+                                    </p>
+
+                                    <p className="mt-1 text-2xl font-bold text-slate-900">
+                                        0min
+                                    </p>
+
+                                    <p className="mt-1 text-sm text-slate-400">
+                                        Nenhuma sessão finalizada
+                                    </p>
+                                </section>
+                            )}
                         </div>
 
                         <section className="rounded-2xl border border-blue-100 bg-blue-50 p-5">

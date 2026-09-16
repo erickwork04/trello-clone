@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 
 import {
     DndContext,
@@ -17,15 +17,7 @@ import {
     sortableKeyboardCoordinates,
 } from '@dnd-kit/sortable'
 
-import {
-    Briefcase,
-    Search,
-    SlidersHorizontal,
-    PlayCircle,
-    CheckCircle2,
-    CircleAlert,
-    Quote,
-} from 'lucide-react'
+import { Briefcase } from 'lucide-react'
 
 import { Board } from '@/db/schema/board'
 
@@ -43,9 +35,23 @@ interface BoardViewProps {
 }
 
 export function BoardView({
-    board,
     columns: initialColumns,
 }: BoardViewProps) {
+    /**
+     * Impede o DndContext de ser renderizado no servidor.
+     *
+     * O @dnd-kit gera IDs internos como:
+     * DndDescribedBy-0
+     *
+     * Esses IDs podem ser diferentes entre servidor e cliente,
+     * causando Hydration Mismatch.
+     */
+    const [mounted, setMounted] = useState(false)
+
+    useEffect(() => {
+        setMounted(true)
+    }, [])
+
     const {
         columns,
         handleDragEnd,
@@ -53,11 +59,7 @@ export function BoardView({
         handleDragOver,
     } = useBoardDnd(initialColumns)
 
-    const [search, setSearch] =
-        useState('')
-
-    const [showFilters, setShowFilters] =
-        useState(false)
+    const [search, setSearch] = useState('')
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -91,12 +93,6 @@ export function BoardView({
         }))
     }, [columns, search])
 
-    const totalCards = columns.reduce(
-        (total, column) =>
-            total + column.cards.length,
-        0
-    )
-
     const inProgressCards = columns
         .filter(
             (column) =>
@@ -129,7 +125,9 @@ export function BoardView({
 
                     {/* ESQUERDA */}
                     <div className="min-w-0">
+
                         <div className="flex items-start gap-3">
+
                             <div className="flex size-10 items-center justify-center rounded-xl bg-blue-600 text-white">
                                 <Briefcase className="size-5" />
                             </div>
@@ -143,11 +141,13 @@ export function BoardView({
                                     Mais foco e execução para o que importa.
                                 </p>
                             </div>
+
                         </div>
 
                         <p className="mt-5 text-xs text-slate-600">
                             Organize suas tarefas, mantenha o foco no essencial e avance projeto por projeto. 🚀
                         </p>
+
                     </div>
 
                     {/* DIREITA */}
@@ -188,82 +188,146 @@ export function BoardView({
                                 0
                             </p>
                         </div>
+
                     </div>
+
                 </div>
 
                 {/* TOOLBAR */}
                 <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 lg:flex-row lg:items-center lg:justify-between">
 
                     <div className="flex rounded-xl border border-slate-200 bg-white p-1">
-                        <button className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600">
+
+                        <button
+                            type="button"
+                            className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600"
+                        >
                             Quadro
                         </button>
 
-                        <button className="px-4 py-2 text-sm text-slate-500">
+                        <button
+                            type="button"
+                            className="px-4 py-2 text-sm text-slate-500"
+                        >
                             Lista
                         </button>
 
-                        <button className="px-4 py-2 text-sm text-slate-500">
+                        <button
+                            type="button"
+                            className="px-4 py-2 text-sm text-slate-500"
+                        >
                             Calendário
                         </button>
+
                     </div>
 
                     <div className="flex flex-wrap gap-3">
-                        {/* busca / filtros / nova tarefa */}
+
+                        {/* BUSCA */}
+                        <input
+                            type="text"
+                            value={search}
+                            onChange={(event) =>
+                                setSearch(
+                                    event.target.value
+                                )
+                            }
+                            placeholder="Buscar tarefa..."
+                            className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                        />
+
                     </div>
+
                 </div>
+
             </div>
 
             {/* BOARD */}
             <main className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
-                <DndContext
-                    sensors={sensors}
-                    collisionDetection={
-                        closestCorners
-                    }
-                    onDragStart={
-                        handleDragStart
-                    }
-                    onDragOver={
-                        handleDragOver
-                    }
-                    onDragEnd={
-                        handleDragEnd
-                    }
-                >
-                    <SortableContext
-                        items={filteredColumns.map(
-                            (column) =>
-                                column.id
-                        )}
-                        strategy={
-                            horizontalListSortingStrategy
+
+                {mounted ? (
+
+                    <DndContext
+                        sensors={sensors}
+                        collisionDetection={
+                            closestCorners
+                        }
+                        onDragStart={
+                            handleDragStart
+                        }
+                        onDragOver={
+                            handleDragOver
+                        }
+                        onDragEnd={
+                            handleDragEnd
                         }
                     >
-                        <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
 
-                            {filteredColumns.map(
-                                (column) => (
-                                    <ColumnCard
-                                        key={
-                                            column.id
-                                        }
-                                        column={
-                                            column
-                                        }
-                                        cards={
-                                            column.cards
-                                        }
-                                    />
-                                )
+                        <SortableContext
+                            items={filteredColumns.map(
+                                (column) =>
+                                    column.id
                             )}
+                            strategy={
+                                horizontalListSortingStrategy
+                            }
+                        >
 
-                            {/* VOLTA A CRIAÇÃO DE COLUNA */}
-                            <CreateColumnButton />
-                        </div>
-                    </SortableContext>
-                </DndContext>
+                            <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
+
+                                {filteredColumns.map(
+                                    (column) => (
+
+                                        <ColumnCard
+                                            key={
+                                                column.id
+                                            }
+                                            column={
+                                                column
+                                            }
+                                            cards={
+                                                column.cards
+                                            }
+                                        />
+
+                                    )
+                                )}
+
+                                <CreateColumnButton />
+
+                            </div>
+
+                        </SortableContext>
+
+                    </DndContext>
+
+                ) : (
+
+                    /*
+                     * Placeholder enquanto o componente
+                     * ainda não foi montado no navegador.
+                     *
+                     * Isso evita o hydration mismatch.
+                     */
+                    <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
+
+                        {initialColumns.map(
+                            (column) => (
+                                <div
+                                    key={
+                                        column.id
+                                    }
+                                    className="h-112.5 w-72 animate-pulse rounded-xl border border-slate-200 bg-slate-100"
+                                />
+                            )
+                        )}
+
+                    </div>
+
+                )}
+
             </main>
+
         </div>
     )
 }
