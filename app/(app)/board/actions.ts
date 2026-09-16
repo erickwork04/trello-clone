@@ -7,7 +7,11 @@ import { boardColumn } from '@/db/schema/column'
 import { card } from '@/db/schema/card'
 import { authActionClient } from '@/lib/safe-action'
 import { eq, max, and, asc, ne } from 'drizzle-orm'
-import { columnColorSchema, columnTitleSchema } from '@/lib/validators/column'
+import {
+    columnColorSchema,
+    columnTitleSchema,
+    columnTypeSchema,
+} from '@/lib/validators/column'
 import { cardNameSchema } from '@/lib/validators/card'
 
 const createColumnSchema = z.object({
@@ -16,9 +20,10 @@ const createColumnSchema = z.object({
 })
 
 const updateColumnSchema = z.object({
-    id: z.string().min(1),
+    id: z.string(),
     title: columnTitleSchema.optional(),
     color: columnColorSchema.optional(),
+    type: columnTypeSchema.optional(),
 })
 
 const deleteColumnSchema = z.object({
@@ -93,6 +98,9 @@ export const updateColumn = authActionClient
                 }),
                 ...(parsedInput.color !== undefined && {
                     color: parsedInput.color,
+                }),
+                ...(parsedInput.type !== undefined && {
+                    type: parsedInput.type,
                 }),
             })
             .where(eq(boardColumn.id, parsedInput.id))

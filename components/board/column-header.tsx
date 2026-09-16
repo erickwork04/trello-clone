@@ -1,17 +1,24 @@
-"use client";
+'use client'
 
-import { useRef, useState } from "react";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { z } from "zod";
-import { GripVertical, Palette, Trash2 } from "lucide-react";
-import { toast } from "sonner";
-import { useAction } from "next-safe-action/hooks";
+import { useRef, useState } from 'react'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
+import {
+  GripVertical,
+  MoreHorizontal,
+  Palette,
+  Trash2,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import { useAction } from 'next-safe-action/hooks'
+
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/popover";
+} from '@/components/ui/popover'
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,168 +28,397 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { Button } from "@/components/ui/button";
-import { updateColumn, deleteColumn } from "@/app/(app)/board/actions";
-import { BoardColumn } from "@/db/schema/column";
-import { DraggableAttributes } from "@dnd-kit/core";
-import { SyntheticListenerMap } from "@dnd-kit/core/dist/hooks/utilities";
+} from '@/components/ui/alert-dialog'
+
+import { Button } from '@/components/ui/button'
+
+import {
+  updateColumn,
+  deleteColumn,
+} from '@/app/(app)/board/actions'
+
+import { BoardColumn } from '@/db/schema/column'
+
+import { DraggableAttributes } from '@dnd-kit/core'
+import { SyntheticListenerMap } from '@dnd-kit/core/dist/hooks/utilities'
+
 import {
   COLUMN_COLOR_TOKENS,
   ColumnColorToken,
   columnTitleSchema,
-} from "@/lib/validators/column";
+  columnColorToCss,
+} from '@/lib/validators/column'
 
 const titleSchema = z.object({
   title: columnTitleSchema,
-});
+})
 
-type TitleForm = z.infer<typeof titleSchema>;
+type TitleForm = z.infer<typeof titleSchema>
 
 interface ColumnHeaderProps {
-  column: BoardColumn;
-  listeners: SyntheticListenerMap | undefined;
-  attributes: DraggableAttributes;
+  column: BoardColumn
+  listeners: SyntheticListenerMap | undefined
+  attributes: DraggableAttributes
 }
+
+const columnTypes = [
+  {
+    value: 'DEFAULT',
+    label: 'Neutra',
+  },
+  {
+    value: 'PENDING',
+    label: 'Pendente',
+  },
+  {
+    value: 'IN_PROGRESS',
+    label: 'Em andamento',
+  },
+  {
+    value: 'DONE',
+    label: 'Concluída',
+  },
+] as const
 
 export function ColumnHeader({
   column,
   listeners,
   attributes,
 }: ColumnHeaderProps) {
-  const [colorOpen, setColorOpen] = useState(false);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [menuOpen, setMenuOpen] =
+    useState(false)
 
-  const { register, handleSubmit, getValues, setValue } = useForm<TitleForm>({
+  const [deleteOpen, setDeleteOpen] =
+    useState(false)
+
+  const inputRef =
+    useRef<HTMLInputElement | null>(null)
+
+  const {
+    register,
+    handleSubmit,
+    getValues,
+    setValue,
+  } = useForm<TitleForm>({
     resolver: zodResolver(titleSchema),
-    defaultValues: { title: column.title },
-  });
-
-  const { execute: execUpdate } = useAction(updateColumn, {
-    onError: () => {
-      setValue("title", column.title);
-      toast.error("Erro ao atualizar coluna.");
+    defaultValues: {
+      title: column.title,
     },
-  });
+  })
 
-  const { execute: execDelete } = useAction(deleteColumn, {
-    onError: () => toast.error("Erro ao deletar coluna."),
-    onSuccess: () => toast.success("Coluna removida."),
-  });
+  const { execute: execUpdate } =
+    useAction(updateColumn, {
+      onError: () => {
+        setValue(
+          'title',
+          column.title
+        )
 
-  const onBlur = handleSubmit((data) => {
-    if (data.title !== column.title) {
-      execUpdate({ id: column.id, title: data.title });
+        toast.error(
+          'Erro ao atualizar coluna.'
+        )
+      },
+    })
+
+  const { execute: execDelete } =
+    useAction(deleteColumn, {
+      onError: () =>
+        toast.error(
+          'Erro ao deletar coluna.'
+        ),
+
+      onSuccess: () =>
+        toast.success(
+          'Coluna removida.'
+        ),
+    })
+
+  const onBlur = handleSubmit(
+    (data) => {
+      if (
+        data.title !==
+        column.title
+      ) {
+        execUpdate({
+          id: column.id,
+          title: data.title,
+        })
+      }
     }
-  });
+  )
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter" || e.key === "Escape") {
-      e.preventDefault();
-      inputRef.current?.blur();
+  function handleKeyDown(
+    event: React.KeyboardEvent<HTMLInputElement>
+  ) {
+    if (
+      event.key === 'Enter' ||
+      event.key === 'Escape'
+    ) {
+      event.preventDefault()
+      inputRef.current?.blur()
     }
-  };
+  }
 
-  const handleColorSelect = (token: ColumnColorToken) => {
-    execUpdate({ id: column.id, color: token });
-    setColorOpen(false);
-    toast.success("Cor atualizada.");
-  };
+  function handleColorSelect(
+    token: ColumnColorToken
+  ) {
+    execUpdate({
+      id: column.id,
+      color: token,
+    })
 
-  const { ref: registerRef, ...registerRest } = register("title");
+    toast.success(
+      'Cor atualizada.'
+    )
+  }
+
+  function handleTypeSelect(
+    type:
+      | 'DEFAULT'
+      | 'PENDING'
+      | 'IN_PROGRESS'
+      | 'DONE'
+  ) {
+    execUpdate({
+      id: column.id,
+      type,
+    })
+
+    setMenuOpen(false)
+
+    toast.success(
+      'Tipo da coluna atualizado.'
+    )
+  }
+
+  const {
+    ref: registerRef,
+    ...registerRest
+  } = register('title')
 
   return (
-    <div className="flex items-center gap-1 px-3 pt-3 pb-2">
-      <button
-        className="cursor-grab active:cursor-grabbing text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)] transition-colors shrink-0 touch-none"
-        {...listeners}
-        {...attributes}
-        aria-label="Arrastar coluna"
-      >
-        <GripVertical size={14} />
-      </button>
+    <>
+      <div className="flex items-center gap-2 py-1">
 
-      <input
-        {...registerRest}
-        ref={(el) => {
-          registerRef(el);
-          inputRef.current = el;
-        }}
-        onBlur={onBlur}
-        onKeyDown={handleKeyDown}
-        className="flex-1 min-w-0 text-sm font-semibold text-[color:var(--foreground)] bg-transparent border-none outline-none focus:ring-0 focus:outline-none truncate cursor-text"
-        aria-label="Título da coluna"
-      />
+        {/* ARRASTAR */}
+        <button
+          type="button"
+          className="shrink-0 cursor-grab touch-none rounded-md p-1 text-slate-400 transition hover:bg-white hover:text-slate-700 active:cursor-grabbing"
+          {...listeners}
+          {...attributes}
+          aria-label="Arrastar coluna"
+        >
+          <GripVertical className="size-4" />
+        </button>
 
-      <div className="flex items-center gap-0.5 shrink-0">
-        <Popover open={colorOpen} onOpenChange={setColorOpen}>
+        {/* COR */}
+        <span
+          className="size-2.5 shrink-0 rounded-full"
+          style={{
+            backgroundColor:
+              columnColorToCss(
+                column.color
+              ),
+          }}
+        />
+
+        {/* TÍTULO */}
+        <input
+          {...registerRest}
+          ref={(element) => {
+            registerRef(element)
+            inputRef.current =
+              element
+          }}
+          onBlur={onBlur}
+          onKeyDown={
+            handleKeyDown
+          }
+          className="min-w-0 flex-1 truncate border-none bg-transparent text-sm font-semibold text-slate-800 outline-none"
+          aria-label="Título da coluna"
+        />
+
+        {/* MENU */}
+        <Popover
+          open={menuOpen}
+          onOpenChange={
+            setMenuOpen
+          }
+        >
           <PopoverTrigger asChild>
             <Button
+              type="button"
               variant="ghost"
               size="icon"
-              className="h-6 w-6 text-[color:var(--muted-foreground)] hover:text-[color:var(--foreground)]"
-              aria-label="Mudar cor"
+              className="size-7 shrink-0 rounded-md text-slate-400 hover:bg-white hover:text-slate-700"
             >
-              <Palette size={13} />
+              <MoreHorizontal className="size-4" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-auto p-2" align="end">
-            <div className="grid grid-cols-4 gap-1.5">
-              {COLUMN_COLOR_TOKENS.map((token) => (
-                <button
-                  key={token}
-                  onClick={() => handleColorSelect(token)}
-                  className="size-6 rounded-md transition-transform hover:scale-110 focus:outline-none"
-                  style={{
-                    backgroundColor: `var(--column-${token})`,
-                    outline:
-                      column.color === token
-                        ? `2px solid var(--column-${token})`
-                        : undefined,
-                    outlineOffset: column.color === token ? "2px" : undefined,
-                  }}
-                  aria-label={`Cor ${token}`}
-                />
-              ))}
+
+          <PopoverContent
+            align="end"
+            className="w-55 p-3"
+          >
+            {/* TIPO */}
+            <div>
+              <p className="mb-2 text-xs font-semibold text-slate-400">
+                Tipo da coluna
+              </p>
+
+              <div className="space-y-1">
+                {columnTypes.map(
+                  (item) => (
+                    <button
+                      key={
+                        item.value
+                      }
+                      type="button"
+                      onClick={() =>
+                        handleTypeSelect(
+                          item.value
+                        )
+                      }
+                      className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm transition hover:bg-slate-100 ${column.type ===
+                        item.value
+                        ? 'font-semibold text-blue-600'
+                        : 'text-slate-700'
+                        }`}
+                    >
+                      <span
+                        className={`size-2 rounded-full ${column.type ===
+                          item.value
+                          ? 'bg-blue-600'
+                          : 'bg-slate-300'
+                          }`}
+                      />
+
+                      {
+                        item.label
+                      }
+                    </button>
+                  )
+                )}
+              </div>
             </div>
+
+            <div className="my-3 h-px bg-slate-200" />
+
+            {/* CORES */}
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <Palette className="size-4 text-slate-400" />
+
+                <p className="text-xs font-semibold text-slate-400">
+                  Cor da coluna
+                </p>
+              </div>
+
+              <div className="grid grid-cols-4 gap-2">
+                {COLUMN_COLOR_TOKENS.map(
+                  (token) => (
+                    <button
+                      key={
+                        token
+                      }
+                      type="button"
+                      onClick={() =>
+                        handleColorSelect(
+                          token
+                        )
+                      }
+                      className="size-7 rounded-md transition-transform hover:scale-110"
+                      style={{
+                        backgroundColor:
+                          `var(--column-${token})`,
+
+                        outline:
+                          column.color ===
+                            token
+                            ? `2px solid var(--column-${token})`
+                            : undefined,
+
+                        outlineOffset:
+                          column.color ===
+                            token
+                            ? '2px'
+                            : undefined,
+                      }}
+                    />
+                  )
+                )}
+              </div>
+            </div>
+
+            <div className="my-3 h-px bg-slate-200" />
+
+            {/* EXCLUIR */}
+            <button
+              type="button"
+              onClick={() => {
+                setMenuOpen(
+                  false
+                )
+
+                setDeleteOpen(
+                  true
+                )
+              }}
+              className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-red-600 transition hover:bg-red-50"
+            >
+              <Trash2 className="size-4" />
+
+              Excluir coluna
+            </button>
           </PopoverContent>
         </Popover>
-
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6 text-[color:var(--muted-foreground)] hover:text-[color:var(--destructive)]"
-              aria-label="Deletar coluna"
-            >
-              <Trash2 size={13} />
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Deletar coluna?</AlertDialogTitle>
-              <AlertDialogDescription>
-                A coluna{" "}
-                <span className="font-semibold">
-                  &ldquo;{getValues("title")}&rdquo;
-                </span>{" "}
-                e todos os seus cards serão removidos permanentemente.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => execDelete({ id: column.id })}
-                className="bg-[color:var(--destructive)] text-[color:var(--destructive-foreground)] hover:opacity-90"
-              >
-                Deletar
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
       </div>
-    </div>
-  );
+
+      {/* DELETE */}
+      <AlertDialog
+        open={deleteOpen}
+        onOpenChange={
+          setDeleteOpen
+        }
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Deletar coluna?
+            </AlertDialogTitle>
+
+            <AlertDialogDescription>
+              A coluna{' '}
+              <span className="font-semibold">
+                &ldquo;
+                {getValues(
+                  'title'
+                )}
+                &rdquo;
+              </span>{' '}
+              e todos os seus
+              cards serão removidos.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <AlertDialogFooter>
+            <AlertDialogCancel>
+              Cancelar
+            </AlertDialogCancel>
+
+            <AlertDialogAction
+              onClick={() =>
+                execDelete({
+                  id: column.id,
+                })
+              }
+              className="bg-red-600 text-white hover:bg-red-700"
+            >
+              Deletar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  )
 }

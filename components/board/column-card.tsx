@@ -6,9 +6,12 @@ import {
     verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+
 import { BoardColumn } from '@/db/schema/column'
 import { Card } from '@/db/schema/card'
+
 import { columnColorToCss } from '@/lib/validators/column'
+
 import { ColumnHeader } from './column-header'
 import { CardItem } from './card-item'
 import { CreateCardButton } from './create-card-button'
@@ -18,7 +21,10 @@ interface ColumnCardProps {
     cards: Card[]
 }
 
-export function ColumnCard({ column, cards }: ColumnCardProps) {
+export function ColumnCard({
+    column,
+    cards,
+}: ColumnCardProps) {
     const {
         attributes,
         listeners,
@@ -26,7 +32,12 @@ export function ColumnCard({ column, cards }: ColumnCardProps) {
         transform,
         transition,
         isDragging,
-    } = useSortable({ id: column.id, data: { type: 'column' } })
+    } = useSortable({
+        id: column.id,
+        data: {
+            type: 'column',
+        },
+    })
 
     const style: React.CSSProperties = {
         transform: CSS.Transform.toString(transform),
@@ -35,41 +46,65 @@ export function ColumnCard({ column, cards }: ColumnCardProps) {
     }
 
     return (
-        <div
+        <section
             ref={setNodeRef}
             style={style}
-            className="flex-none w-[272px] flex flex-col rounded-[var(--radius)] bg-[color:var(--card)] border border-[color:var(--border)] shadow-sm select-none"
+            className="flex w-57.5 flex-none select-none flex-col rounded-2xl border border-slate-200 bg-slate-100/70 shadow-sm"
         >
+            {/* COR DA COLUNA */}
             <div
-                className="w-full h-1 rounded-t-[var(--radius)] shrink-0"
-                style={{ backgroundColor: columnColorToCss(column.color) }}
+                className="h-1.5 w-full shrink-0 rounded-t-2xl"
+                style={{
+                    backgroundColor:
+                        columnColorToCss(
+                            column.color
+                        ),
+                }}
                 aria-hidden
             />
-            <ColumnHeader
-                column={column}
-                listeners={listeners}
-                attributes={attributes}
-            />
+
+            {/* HEADER */}
+            <div className="px-3 pt-3">
+                <ColumnHeader
+                    column={column}
+                    listeners={listeners}
+                    attributes={attributes}
+                />
+            </div>
+
+            {/* CARDS */}
             <SortableContext
-                items={cards.map((c) => c.id)}
-                strategy={verticalListSortingStrategy}
+                items={cards.map(
+                    (card) => card.id
+                )}
+                strategy={
+                    verticalListSortingStrategy
+                }
             >
-                <div className="flex-1 px-3 pb-2 flex flex-col gap-2 min-h-[60px]">
-                    {cards.map((c) => (
-                        <CardItem key={c.id} card={c} />
+                <div className="flex min-h-25 flex-1 flex-col gap-3 px-3 py-3">
+                    {cards.map((card) => (
+                        <CardItem
+                            key={card.id}
+                            card={card}
+                        />
                     ))}
+
                     {cards.length === 0 && (
-                        <div className="flex-1 flex items-center justify-center min-h-[60px] rounded-md border border-dashed border-[color:var(--border)]">
-                            <span className="text-xs text-[color:var(--muted-foreground)]">
+                        <div className="flex min-h-25 flex-1 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-white/60">
+                            <span className="text-xs text-slate-400">
                                 Sem cards
                             </span>
                         </div>
                     )}
                 </div>
             </SortableContext>
+
+            {/* CRIAR CARD */}
             <div className="px-3 pb-3">
-                <CreateCardButton columnId={column.id} />
+                <CreateCardButton
+                    columnId={column.id}
+                />
             </div>
-        </div>
+        </section>
     )
 }

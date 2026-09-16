@@ -19,11 +19,11 @@ export default async function AppLayout({
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[color:var(--background)]">
+    <div className="flex h-screen overflow-hidden bg-background">
       <AppSidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center justify-end border-b border-[color:var(--border)] bg-[color:var(--card)] px-6">
+        <header className="flex h-16 shrink-0 items-center justify-end border-b border-border bg-card px-6">
           <LogoutButton />
         </header>
 

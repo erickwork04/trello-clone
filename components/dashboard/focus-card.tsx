@@ -1,6 +1,7 @@
 import { Clock3, Target } from 'lucide-react'
 import { AreaBadge } from './area-badge'
 import { FocusTimer } from './focus-timer'
+import { FocusTaskCheckbox } from './focus-task-checkbox'
 
 interface FocusCardProps {
     title: string
@@ -52,9 +53,13 @@ export function FocusCard({
 
             <div className="flex flex-col gap-4 rounded-xl border border-slate-200 bg-slate-50/70 p-5 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-start gap-4">
-                    <input
-                        type="checkbox"
-                        className="mt-1 size-5 rounded border-slate-300"
+                    <FocusTaskCheckbox
+                        taskId={taskId}
+                        activeSessionId={
+                            activeSession?.taskId === taskId
+                                ? activeSession.id
+                                : null
+                        }
                     />
 
                     <div>

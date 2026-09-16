@@ -28,45 +28,95 @@ export default async function BoardPage() {
     if (!userBoard) {
         const [created] = await db
             .insert(board)
-            .values({ userId: session.user.id, title: 'Meu Board' })
-            .onConflictDoNothing({ target: board.userId })
+            .values({
+                userId: session.user.id,
+                title: 'Meu Board',
+            })
+            .onConflictDoNothing({
+                target: board.userId,
+            })
             .returning()
 
         if (!created) {
             ;[userBoard] = await db
                 .select()
                 .from(board)
-                .where(eq(board.userId, session.user.id))
+                .where(
+                    eq(
+                        board.userId,
+                        session.user.id
+                    )
+                )
                 .limit(1)
         } else {
             userBoard = created
         }
     }
 
-    if (!userBoard) redirect('/login')
+    if (!userBoard) {
+        redirect('/login')
+    }
 
     const columns = await db
         .select()
         .from(boardColumn)
-        .where(eq(boardColumn.boardId, userBoard.id))
-        .orderBy(asc(boardColumn.position))
+        .where(
+            eq(
+                boardColumn.boardId,
+                userBoard.id
+            )
+        )
+        .orderBy(
+            asc(boardColumn.position)
+        )
 
     const rawCards = await db
-        .select({ c: card })
+        .select({
+            c: card,
+        })
         .from(card)
-        .innerJoin(boardColumn, eq(card.columnId, boardColumn.id))
-        .where(eq(boardColumn.boardId, userBoard.id))
-        .orderBy(asc(card.position))
+        .innerJoin(
+            boardColumn,
+            eq(
+                card.columnId,
+                boardColumn.id
+            )
+        )
+        .where(
+            eq(
+                boardColumn.boardId,
+                userBoard.id
+            )
+        )
+        .orderBy(
+            asc(card.position)
+        )
 
-    const cardsByColumnId: Record<string, Card[]> = {}
+    const cardsByColumnId: Record<
+        string,
+        Card[]
+    > = {}
+
     for (const { c } of rawCards) {
-        ;(cardsByColumnId[c.columnId] ??= []).push(c)
+        ; (
+            cardsByColumnId[c.columnId] ??=
+            []
+        ).push(c)
     }
 
-    const columnsWithCards: ColumnWithCards[] = columns.map((col) => ({
-        ...col,
-        cards: cardsByColumnId[col.id] ?? [],
-    }))
+    const columnsWithCards: ColumnWithCards[] =
+        columns.map((column) => ({
+            ...column,
+            cards:
+                cardsByColumnId[
+                column.id
+                ] ?? [],
+        }))
 
-    return <BoardView board={userBoard} columns={columnsWithCards} />
+    return (
+        <BoardView
+            board={userBoard}
+            columns={columnsWithCards}
+        />
+    )
 }

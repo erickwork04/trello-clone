@@ -5,6 +5,7 @@ import { Clock3, MoreVertical, Star } from 'lucide-react'
 import { completeTask } from '@/app/(app)/hoje/_actions/complete-task'
 import { AreaBadge } from './area-badge'
 import { toggleTopPriority } from '@/app/(app)/hoje/_actions/toggle-top-priority'
+import { TaskActions } from './task-actions'
 
 interface TaskRowProps {
     id: string
@@ -40,12 +41,12 @@ export function TaskRow({
     }
 
     function handleComplete() {
-        if (completed || isPending) {
+        if (isPending) {
             return
         }
 
         startTransition(async () => {
-            await completeTask(id)
+            await completeTask(id, completed)
         })
     }
 
@@ -61,7 +62,6 @@ export function TaskRow({
                 checked={completed}
                 disabled={isPending}
                 onChange={handleComplete}
-                readOnly={completed}
                 className="mt-1 size-4 shrink-0 rounded border-slate-300"
             />
 
@@ -117,13 +117,12 @@ export function TaskRow({
                 </div>
             </div>
 
-            <button
-                type="button"
-                className="shrink-0 rounded-md p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                title="Opções"
-            >
-                <MoreVertical className="size-4" />
-            </button>
+            <TaskActions
+                taskId={id}
+                title={title}
+                description={description}
+                time={time}
+            />
         </div>
     )
 }
