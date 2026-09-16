@@ -95,8 +95,8 @@ export default async function InboxPage() {
         <div className="h-full overflow-y-auto bg-[#fbfcff]">
             <div className="w-full px-8 py-6 2xl:px-10">
                 {/* HEADER */}
-                <div className="mb-6 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-                    <div className="min-w-0 flex-1">
+                <div className="mb-6">
+                    <div className="mb-5">
                         <div className="flex items-center gap-3">
                             <Inbox className="size-8 text-blue-600" />
 
@@ -109,15 +109,15 @@ export default async function InboxPage() {
                             Capture suas ideias e tarefas rapidamente, sem pressão.
                         </p>
 
-                        <p className="mt-3 text-sm text-slate-500">
+                        <p className="mt-3 max-w-2xl text-sm text-slate-500">
                             Tudo o que chega aqui pode ser organizado depois. O importante é
                             não esquecer. ✨
                         </p>
                     </div>
 
                     {/* FRASE + INDICADORES */}
-                    <div className="grid shrink-0 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        <div className="flex min-h-25 min-w-52.5 items-center justify-center rounded-2xl bg-blue-50 px-5 py-4">
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                        <div className="flex min-h-25 items-center justify-center rounded-2xl bg-blue-50 px-5 py-4">
                             <p className="text-center text-sm italic leading-6 text-blue-600">
                                 “Disciplina hoje,
                                 <br />

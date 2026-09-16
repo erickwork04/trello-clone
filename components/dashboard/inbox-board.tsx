@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { moveInboxTask } from "@/app/(dashboard)/inbox/actions"
 import { InboxColumn } from "@/components/dashboard/inbox-column"
 import { InboxTaskCard } from "@/components/dashboard/inbox-task-card"
@@ -40,6 +40,10 @@ export function InboxBoard({
 }: InboxBoardProps) {
     const [items, setItems] = useState(tasks)
     const [, startTransition] = useTransition()
+
+    useEffect(() => {
+        setItems(tasks)
+    }, [tasks])
 
     function handleDragStart(
         event: React.DragEvent<HTMLDivElement>,
