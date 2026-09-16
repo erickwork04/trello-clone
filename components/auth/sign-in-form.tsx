@@ -2,15 +2,16 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
-import { Loader2 } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 
 import { authClient } from "@/lib/auth-client";
 import { signInSchema, type SignInSchema } from "@/lib/validators/auth";
 import { Button } from "@/components/ui/button";
+import { WaitlistDialog } from "@/components/auth/waitlist-dialog";
 import {
   Form,
   FormControl,
@@ -24,6 +25,7 @@ import { Input } from "@/components/ui/input";
 export function SignInForm() {
   const router = useRouter();
   const [isPending, setIsPending] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   const form = useForm<SignInSchema>({
     resolver: zodResolver(signInSchema),
@@ -32,10 +34,12 @@ export function SignInForm() {
 
   async function onSubmit(values: SignInSchema) {
     setIsPending(true);
+
     const { error } = await authClient.signIn.email({
       email: values.email,
       password: values.password,
     });
+
     setIsPending(false);
 
     if (error) {
@@ -55,19 +59,29 @@ export function SignInForm() {
           name="email"
           render={({ field }) => (
             <FormItem className="auth-field-1">
-              <FormLabel className="text-slate-300 text-sm font-medium">
+              <FormLabel className="text-sm font-medium text-slate-700">
                 E-mail
               </FormLabel>
+
               <FormControl>
                 <Input
                   type="email"
                   placeholder="seu@email.com"
                   autoComplete="email"
-                  className="bg-slate-800/60 border-slate-700 text-slate-100 placeholder:text-slate-500 focus-visible:ring-indigo-500 focus-visible:border-indigo-500 h-11"
+                  className="
+                    h-11
+                    border-slate-200
+                    bg-white
+                    text-slate-900
+                    placeholder:text-slate-400
+                    focus-visible:border-blue-500
+                    focus-visible:ring-blue-500/20
+                  "
                   {...field}
                 />
               </FormControl>
-              <FormMessage className="text-red-400 text-xs" />
+
+              <FormMessage className="text-xs text-red-500" />
             </FormItem>
           )}
         />
@@ -77,19 +91,54 @@ export function SignInForm() {
           name="password"
           render={({ field }) => (
             <FormItem className="auth-field-2">
-              <FormLabel className="text-slate-300 text-sm font-medium">
+              <FormLabel className="text-sm font-medium text-slate-700">
                 Senha
               </FormLabel>
+
               <FormControl>
-                <Input
-                  type="password"
-                  placeholder="••••••••"
-                  autoComplete="current-password"
-                  className="bg-slate-800/60 border-slate-700 text-slate-100 placeholder:text-slate-500 focus-visible:ring-indigo-500 focus-visible:border-indigo-500 h-11"
-                  {...field}
-                />
+                <div className="relative">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    placeholder="••••••••"
+                    autoComplete="current-password"
+                    className="
+        h-11
+        border-slate-200
+        bg-white
+        pr-11
+        text-slate-900
+        placeholder:text-slate-400
+        focus-visible:border-blue-500
+        focus-visible:ring-blue-500/20
+      "
+                    {...field}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((current) => !current)}
+                    className="
+                      absolute
+                      right-3
+                      top-1/2
+                      -translate-y-1/2
+                      cursor-pointer
+                      text-slate-400
+                      transition-colors
+                      hover:text-slate-700
+                    "
+                    aria-label={showPassword ? "Ocultar senha" : "Mostrar senha"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="size-5" />
+                    ) : (
+                      <Eye className="size-5" />
+                    )}
+                  </button>
+                </div>
               </FormControl>
-              <FormMessage className="text-red-400 text-xs" />
+
+              <FormMessage className="text-xs text-red-500" />
             </FormItem>
           )}
         />
@@ -98,7 +147,16 @@ export function SignInForm() {
           <Button
             type="submit"
             disabled={isPending}
-            className="w-full h-11 bg-indigo-600 hover:bg-indigo-500 text-white font-medium transition-all duration-200"
+            className="
+              h-11
+              w-full
+              cursor-pointer
+              bg-blue-600
+              font-medium
+              text-white
+              transition-colors
+              hover:bg-blue-700
+            "
           >
             {isPending ? (
               <Loader2 className="size-4 animate-spin" />
@@ -110,12 +168,7 @@ export function SignInForm() {
 
         <p className="auth-field-4 text-center text-sm text-slate-500">
           Não tem uma conta?{" "}
-          <Link
-            href="/signup"
-            className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
-          >
-            Criar conta
-          </Link>
+          <WaitlistDialog />
         </p>
       </form>
     </Form>

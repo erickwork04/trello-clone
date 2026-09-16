@@ -1,101 +1,111 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 :root {
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --card-foreground: #0f172a;
-  --popover: #ffffff;
-  --popover-foreground: #0f172a;
-  --primary: #1e293b;
-  --primary-foreground: #f8fafc;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #1e293b;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #f1f5f9;
-  --accent-foreground: #1e293b;
-  --destructive: #ef4444;
-  --destructive-foreground: #f8fafc;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #1e293b;
-  --radius: 0.5rem;
-  --auth-bg: #0f172a;
-  --auth-card-border: rgba(255, 255, 255, 0.08);
-  --auth-accent: #6366f1;
+    --background: #f8fafc;
+    --foreground: #0f172a;
+    --card: #ffffff;
+    --card-foreground: #0f172a;
+    --popover: #ffffff;
+    --popover-foreground: #0f172a;
 
-  /* Column color palette */
-  --column-slate: #64748b;
-  --column-blue: #3b82f6;
-  --column-green: #10b981;
-  --column-amber: #f59e0b;
-  --column-red: #ef4444;
-  --column-purple: #8b5cf6;
-  --column-pink: #ec4899;
-  --column-cyan: #06b6d4;
+    --primary: #2563eb;
+    --primary-foreground: #ffffff;
+
+    --secondary: #f1f5f9;
+    --secondary-foreground: #1e293b;
+
+    --muted: #f1f5f9;
+    --muted-foreground: #64748b;
+
+    --accent: #eff6ff;
+    --accent-foreground: #1e3a8a;
+
+    --destructive: #ef4444;
+    --destructive-foreground: #ffffff;
+
+    --border: #e2e8f0;
+    --input: #e2e8f0;
+    --ring: #2563eb;
+
+    --radius: 0.5rem;
+
+    --auth-bg: #f8fafc;
+    --auth-card-border: #e2e8f0;
+    --auth-accent: #2563eb;
+
+    /* Column color palette */
+    --column-slate: #64748b;
+    --column-blue: #3b82f6;
+    --column-green: #10b981;
+    --column-amber: #f59e0b;
+    --column-red: #ef4444;
+    --column-purple: #8b5cf6;
+    --column-pink: #ec4899;
+    --column-cyan: #06b6d4;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+    --font-sans: var(--font-geist-sans);
+    --font-mono: var(--font-geist-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+    background: var(--background);
+    color: var(--foreground);
 }
 
 /* Auth layout specific */
 .auth-layout {
-  background-color: var(--auth-bg);
-  background-image:
-    radial-gradient(circle at 20% 50%, rgba(99, 102, 241, 0.08) 0%, transparent 50%),
-    radial-gradient(circle at 80% 20%, rgba(99, 102, 241, 0.06) 0%, transparent 40%),
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+    background: linear-gradient(to bottom right, #f8fafc, #f1f5f9);
 }
 
 @keyframes fade-up {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .auth-card-enter {
-  animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
-.auth-field-1 { animation: fade-up 0.4s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.auth-field-2 { animation: fade-up 0.4s 0.18s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.auth-field-3 { animation: fade-up 0.4s 0.26s cubic-bezier(0.16, 1, 0.3, 1) both; }
-.auth-field-4 { animation: fade-up 0.4s 0.34s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.auth-field-1 {
+    animation: fade-up 0.4s 0.1s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.auth-field-2 {
+    animation: fade-up 0.4s 0.18s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.auth-field-3 {
+    animation: fade-up 0.4s 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.auth-field-4 {
+    animation: fade-up 0.4s 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+}

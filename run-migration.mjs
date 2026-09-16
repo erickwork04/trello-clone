@@ -6,7 +6,7 @@ import postgres from 'postgres'
 const sql = postgres(process.env.DATABASE_URL)
 
 const migration = fs.readFileSync(
-    './db/migrations/0010_thick_aqueduct.sql',
+    './db/migrations/0011_hard_wraith.sql',
     'utf8'
 )
 
@@ -21,7 +21,7 @@ try {
         await sql.unsafe(statement)
     }
 
-    console.log('Migration 0010 aplicada com sucesso.')
+    console.log('Migration 0011 aplicada com sucesso.')
 } catch (error) {
     console.error('Erro ao aplicar migration:')
     console.error(error)
