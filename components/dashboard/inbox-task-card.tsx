@@ -46,8 +46,8 @@ export function InboxTaskCard({
                 {/* TÍTULO */}
                 <p
                     className={`min-w-0 flex-1 text-sm font-medium leading-5 ${completedAt
-                            ? "text-slate-400 line-through"
-                            : "text-slate-900"
+                        ? "text-slate-400 line-through"
+                        : "text-slate-900"
                         }`}
                 >
                     {title}
@@ -114,9 +114,7 @@ export function InboxTaskCard({
                         <Clock3 className="size-3.5" />
 
                         <span>
-                            {createdAt.toLocaleDateString(
-                                "pt-BR"
-                            )}
+                            {createdAt.toLocaleDateString("pt-BR")}
                         </span>
                     </>
                 )}
