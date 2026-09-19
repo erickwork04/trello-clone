@@ -8,7 +8,25 @@ import { BoardColumn } from '@/db/schema/column'
 import { Card } from '@/db/schema/card'
 import { reorderColumns, moveCard } from '@/app/(app)/board/actions'
 
-export type ColumnWithCards = BoardColumn & { cards: Card[] }
+export interface CardTagOption {
+    id: string
+    name: string
+    color: string
+}
+
+export interface CardChecklistItemOption {
+    id: string
+    title: string
+    completed: boolean
+    position: number
+}
+
+export type BoardCard = Card & {
+    tags: CardTagOption[]
+    checklistItems: CardChecklistItemOption[]
+}
+
+export type ColumnWithCards = BoardColumn & { cards: BoardCard[] }
 
 export function useBoardDnd(initialColumns: ColumnWithCards[]) {
     const [columns, setColumns] = useState(initialColumns)

@@ -1,39 +1,38 @@
 'use client'
 
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Trash2 } from 'lucide-react'
+import { CalendarDays, ListChecks } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAction } from 'next-safe-action/hooks'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-    AlertDialogTrigger,
-} from '@/components/ui/alert-dialog'
-import { Button } from '@/components/ui/button'
-import { Card } from '@/db/schema/card'
+
 import { cardNameSchema } from '@/lib/validators/card'
-import { updateCard, deleteCard } from '@/app/(app)/board/actions'
+import { updateCard } from '@/app/(app)/board/actions'
+import { BoardCard, CardTagOption } from './use-board-dnd'
+import { CardMenu } from './card-menu'
 
 const nameSchema = z.object({ name: cardNameSchema })
 type NameForm = z.infer<typeof nameSchema>
 
 interface CardItemProps {
-    card: Card
+    card: BoardCard
+    allColumns: Array<{ id: string; title: string; type: string }>
+    availableTags: CardTagOption[]
+    onOpenCard: (cardId: string) => void
 }
 
-export function CardItem({ card }: CardItemProps) {
+export function CardItem({
+    card,
+    allColumns,
+    availableTags,
+    onOpenCard,
+}: CardItemProps) {
     const inputRef = useRef<HTMLInputElement | null>(null)
+    const [editing, setEditing] = useState(false)
 
     const {
         attributes,
@@ -65,12 +64,8 @@ export function CardItem({ card }: CardItemProps) {
         },
     })
 
-    const { execute: execDelete } = useAction(deleteCard, {
-        onSuccess: () => toast.success('Card removido.'),
-        onError: () => toast.error('Erro ao deletar card.'),
-    })
-
     const onBlur = handleSubmit((data) => {
+        setEditing(false)
         if (data.name !== card.name) {
             execUpdate({ id: card.id, name: data.name })
         }
@@ -85,61 +80,91 @@ export function CardItem({ card }: CardItemProps) {
 
     const { ref: registerRef, ...registerRest } = register('name')
 
+    const completedChecklist = card.checklistItems.filter(
+        (i) => i.completed
+    ).length
+
     return (
         <div
             ref={setNodeRef}
             style={style}
             {...listeners}
             {...attributes}
-            className="group bg-[color:var(--card)] rounded-md border border-[color:var(--border)] px-3 py-2.5 shadow-sm cursor-grab active:cursor-grabbing flex items-center gap-2 touch-none"
+            onClick={(e) => {
+                if (editing) return
+                e.stopPropagation()
+                onOpenCard(card.id)
+            }}
+            className="group bg-[color:var(--card)] rounded-md border border-[color:var(--border)] px-3 py-2.5 shadow-sm cursor-grab active:cursor-grabbing touch-none"
         >
-            <input
-                {...registerRest}
-                ref={(el) => {
-                    registerRef(el)
-                    inputRef.current = el
-                }}
-                onBlur={onBlur}
-                onKeyDown={handleKeyDown}
-                onPointerDown={(e) => e.stopPropagation()}
-                className="flex-1 min-w-0 text-sm text-[color:var(--foreground)] bg-transparent border-none outline-none focus:ring-0 focus:outline-none cursor-text"
-                aria-label="Nome do card"
-            />
+            <div className="flex items-center gap-2">
+                <input
+                    {...registerRest}
+                    ref={(el) => {
+                        registerRef(el)
+                        inputRef.current = el
+                    }}
+                    readOnly={!editing}
+                    onFocus={() => setEditing(true)}
+                    onBlur={onBlur}
+                    onKeyDown={handleKeyDown}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => e.stopPropagation()}
+                    className="flex-1 min-w-0 text-sm text-[color:var(--foreground)] bg-transparent border-none outline-none focus:ring-0 focus:outline-none cursor-text"
+                    aria-label="Nome do card"
+                />
 
-            <AlertDialog>
-                <AlertDialogTrigger asChild>
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 text-[color:var(--muted-foreground)] hover:text-[color:var(--destructive)] transition-opacity"
-                        aria-label="Deletar card"
-                        onPointerDown={(e) => e.stopPropagation()}
-                    >
-                        <Trash2 size={11} />
-                    </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                    <AlertDialogHeader>
-                        <AlertDialogTitle>Deletar card?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            O card{' '}
-                            <span className="font-semibold">
-                                &ldquo;{card.name}&rdquo;
-                            </span>{' '}
-                            será removido permanentemente.
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                        <AlertDialogAction
-                            onClick={() => execDelete({ id: card.id })}
-                            className="bg-[color:var(--destructive)] text-[color:var(--destructive-foreground)] hover:opacity-90"
+                <CardMenu
+                    card={card}
+                    columns={allColumns}
+                    availableTags={availableTags}
+                    onOpenDetails={() => onOpenCard(card.id)}
+                    onEdit={() => {
+                        setEditing(true)
+                        requestAnimationFrame(() => inputRef.current?.focus())
+                    }}
+                />
+            </div>
+
+            {(card.tags.length > 0 ||
+                card.checklistItems.length > 0 ||
+                card.dueDate) && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                    {card.tags.map((t) => (
+                        <span
+                            key={t.id}
+                            className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                            style={{
+                                backgroundColor: `${t.color}20`,
+                                color: t.color,
+                            }}
                         >
-                            Deletar
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+                            <span
+                                className="size-1.5 rounded-full"
+                                style={{ backgroundColor: t.color }}
+                            />
+                            {t.name}
+                        </span>
+                    ))}
+
+                    {card.checklistItems.length > 0 && (
+                        <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                            <ListChecks className="size-3" />
+                            {completedChecklist}/{card.checklistItems.length}
+                        </span>
+                    )}
+
+                    {card.dueDate && (
+                        <span className="flex items-center gap-1 text-[10px] text-slate-400">
+                            <CalendarDays className="size-3" />
+                            {new Date(card.dueDate).toLocaleDateString(
+                                'pt-BR',
+                                { day: '2-digit', month: '2-digit' }
+                            )}
+                        </span>
+                    )}
+                </div>
+            )}
         </div>
     )
 }

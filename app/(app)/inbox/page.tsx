@@ -4,14 +4,11 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import {
     AlertCircle,
     Inbox,
-    Search,
-    SlidersHorizontal,
     Tag,
 } from "lucide-react";
 
 import { InboxStatCard } from "@/components/dashboard/inbox-stat-card";
-import { NewInboxTaskButton } from "@/components/dashboard/new-inbox-task-button";
-import { InboxBoard } from "@/components/dashboard/inbox-board";
+import { InboxView } from "@/components/dashboard/inbox-view";
 import { db } from "@/db";
 import { tag } from "@/db/schema/tag";
 import { task } from "@/db/schema/task";
@@ -159,57 +156,8 @@ export default async function InboxPage() {
                     </div>
                 </div>
 
-                {/* TOOLBAR */}
-                <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
-                    <div className="flex rounded-xl border border-slate-200 bg-white p-1">
-                        <button
-                            type="button"
-                            className="rounded-lg bg-blue-50 px-5 py-2 text-sm font-medium text-blue-600"
-                        >
-                            Quadro
-                        </button>
-
-                        <button
-                            type="button"
-                            className="px-5 py-2 text-sm text-slate-600 transition hover:text-slate-900"
-                        >
-                            Lista
-                        </button>
-
-                        <button
-                            type="button"
-                            className="px-5 py-2 text-sm text-slate-600 transition hover:text-slate-900"
-                        >
-                            Calendário
-                        </button>
-                    </div>
-
-                    <div className="flex flex-1 flex-wrap justify-end gap-3">
-                        <div className="flex h-11 w-full max-w-[320px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-4">
-                            <Search className="size-4 shrink-0 text-slate-400" />
-
-                            <input
-                                type="text"
-                                placeholder="Buscar na caixa de entrada..."
-                                className="h-full w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
-                            />
-                        </div>
-
-                        <button
-                            type="button"
-                            className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
-                        >
-                            <SlidersHorizontal className="size-4" />
-                            Filtros
-                        </button>
-
-                        <NewInboxTaskButton tags={userTags} />
-                    </div>
-                </div>
-
-                {/* BOARD */}
-
-                <InboxBoard
+                {/* TOOLBAR + VIEWS + BUSCA + FILTROS */}
+                <InboxView
                     tasks={inboxTasks.map((item) => ({
                         ...item,
                         tags: tagsByTask.get(item.id) ?? [],

@@ -5,6 +5,8 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import {
+  ArrowLeft,
+  ArrowRight,
   GripVertical,
   MoreHorizontal,
   Palette,
@@ -35,6 +37,7 @@ import { Button } from '@/components/ui/button'
 import {
   updateColumn,
   deleteColumn,
+  reorderColumns,
 } from '@/app/(app)/board/actions'
 
 import { BoardColumn } from '@/db/schema/column'
@@ -59,6 +62,8 @@ interface ColumnHeaderProps {
   column: BoardColumn
   listeners: SyntheticListenerMap | undefined
   attributes: DraggableAttributes
+  allColumns: Array<{ id: string; title: string; type: string }>
+  cardsInColumn: number
 }
 
 const columnTypes = [
@@ -84,12 +89,17 @@ export function ColumnHeader({
   column,
   listeners,
   attributes,
+  allColumns,
+  cardsInColumn,
 }: ColumnHeaderProps) {
   const [menuOpen, setMenuOpen] =
     useState(false)
 
   const [deleteOpen, setDeleteOpen] =
     useState(false)
+
+  const [targetColumnId, setTargetColumnId] =
+    useState('')
 
   const inputRef =
     useRef<HTMLInputElement | null>(null)
@@ -122,16 +132,61 @@ export function ColumnHeader({
 
   const { execute: execDelete } =
     useAction(deleteColumn, {
-      onError: () =>
+      onError: (args) =>
         toast.error(
-          'Erro ao deletar coluna.'
+          args.error.serverError ?? 'Erro ao deletar coluna.'
         ),
 
-      onSuccess: () =>
+      onSuccess: () => {
         toast.success(
           'Coluna removida.'
-        ),
+        )
+        setDeleteOpen(false)
+        setTargetColumnId('')
+      },
     })
+
+  const { execute: execReorder } =
+    useAction(reorderColumns, {
+      onError: () =>
+        toast.error('Erro ao reordenar colunas.'),
+    })
+
+  const otherColumns = allColumns.filter(
+    (c) => c.id !== column.id
+  )
+
+  function moveColumn(direction: 'left' | 'right') {
+    const ids = allColumns.map((c) => c.id)
+    const index = ids.indexOf(column.id)
+    const swapIndex = direction === 'left' ? index - 1 : index + 1
+
+    if (swapIndex < 0 || swapIndex >= ids.length) return
+
+    const reordered = [...ids]
+    ;[reordered[index], reordered[swapIndex]] = [
+      reordered[swapIndex],
+      reordered[index],
+    ]
+
+    execReorder({ orderedIds: reordered })
+    setMenuOpen(false)
+  }
+
+  function handleDeleteClick() {
+    setMenuOpen(false)
+    setTargetColumnId('')
+    setDeleteOpen(true)
+  }
+
+  function confirmDelete() {
+    if (cardsInColumn > 0 && !targetColumnId) return
+
+    execDelete({
+      id: column.id,
+      targetColumnId: cardsInColumn > 0 ? targetColumnId : undefined,
+    })
+  }
 
   const onBlur = handleSubmit(
     (data) => {
@@ -352,18 +407,39 @@ export function ColumnHeader({
 
             <div className="my-3 h-px bg-slate-200" />
 
+            {/* MOVER (alternativa ao drag, útil no mobile) */}
+            <div>
+              <p className="mb-2 text-xs font-semibold text-slate-400">
+                Mover coluna
+              </p>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => moveColumn('left')}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-slate-200 py-2 text-sm text-slate-600 transition hover:bg-slate-100"
+                >
+                  <ArrowLeft className="size-3.5" />
+                  Esquerda
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => moveColumn('right')}
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-slate-200 py-2 text-sm text-slate-600 transition hover:bg-slate-100"
+                >
+                  Direita
+                  <ArrowRight className="size-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="my-3 h-px bg-slate-200" />
+
             {/* EXCLUIR */}
             <button
               type="button"
-              onClick={() => {
-                setMenuOpen(
-                  false
-                )
-
-                setDeleteOpen(
-                  true
-                )
-              }}
+              onClick={handleDeleteClick}
               className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-red-600 transition hover:bg-red-50"
             >
               <Trash2 className="size-4" />
@@ -377,9 +453,10 @@ export function ColumnHeader({
       {/* DELETE */}
       <AlertDialog
         open={deleteOpen}
-        onOpenChange={
-          setDeleteOpen
-        }
+        onOpenChange={(open) => {
+          setDeleteOpen(open)
+          if (!open) setTargetColumnId('')
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -387,17 +464,78 @@ export function ColumnHeader({
               Deletar coluna?
             </AlertDialogTitle>
 
-            <AlertDialogDescription>
-              A coluna{' '}
-              <span className="font-semibold">
-                &ldquo;
-                {getValues(
-                  'title'
+            <AlertDialogDescription asChild>
+              <div>
+                {cardsInColumn > 0 ? (
+                  <>
+                    <p>
+                      Esta coluna possui{' '}
+                      <span className="font-semibold">
+                        {cardsInColumn}{' '}
+                        {cardsInColumn === 1
+                          ? 'tarefa'
+                          : 'tarefas'}
+                      </span>
+                      . Selecione para onde
+                      movê-las antes de
+                      excluir a coluna{' '}
+                      <span className="font-semibold">
+                        &ldquo;
+                        {getValues('title')}
+                        &rdquo;
+                      </span>
+                      .
+                    </p>
+
+                    {otherColumns.length === 0 ? (
+                      <p className="mt-3 text-red-600">
+                        Não há outra coluna
+                        para receber essas
+                        tarefas. Crie outra
+                        coluna antes de
+                        excluir esta.
+                      </p>
+                    ) : (
+                      <select
+                        value={targetColumnId}
+                        onChange={(e) =>
+                          setTargetColumnId(
+                            e.target.value
+                          )
+                        }
+                        className="mt-3 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                      >
+                        <option value="">
+                          Selecione a coluna
+                          de destino
+                        </option>
+                        {otherColumns.map(
+                          (c) => (
+                            <option
+                              key={c.id}
+                              value={c.id}
+                            >
+                              {c.title}
+                            </option>
+                          )
+                        )}
+                      </select>
+                    )}
+                  </>
+                ) : (
+                  <p>
+                    A coluna{' '}
+                    <span className="font-semibold">
+                      &ldquo;
+                      {getValues('title')}
+                      &rdquo;
+                    </span>{' '}
+                    está vazia e será
+                    removida
+                    permanentemente.
+                  </p>
                 )}
-                &rdquo;
-              </span>{' '}
-              e todos os seus
-              cards serão removidos.
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -407,12 +545,13 @@ export function ColumnHeader({
             </AlertDialogCancel>
 
             <AlertDialogAction
-              onClick={() =>
-                execDelete({
-                  id: column.id,
-                })
+              onClick={confirmDelete}
+              disabled={
+                cardsInColumn > 0 &&
+                (!targetColumnId ||
+                  otherColumns.length === 0)
               }
-              className="bg-red-600 text-white hover:bg-red-700"
+              className="bg-red-600 text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Deletar
             </AlertDialogAction>

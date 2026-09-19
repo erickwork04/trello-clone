@@ -1,5 +1,12 @@
 import { relations } from 'drizzle-orm'
-import { index, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
+import {
+    date,
+    index,
+    integer,
+    pgTable,
+    text,
+    timestamp,
+} from 'drizzle-orm/pg-core'
 import { boardColumn } from './column'
 
 export const card = pgTable(
@@ -12,6 +19,10 @@ export const card = pgTable(
             .notNull()
             .references(() => boardColumn.id, { onDelete: 'cascade' }),
         name: text('name').notNull(),
+        description: text('description'),
+        dueDate: date('due_date', {
+            mode: 'date',
+        }),
         position: integer('position').notNull(),
         createdAt: timestamp('created_at').defaultNow().notNull(),
         updatedAt: timestamp('updated_at')

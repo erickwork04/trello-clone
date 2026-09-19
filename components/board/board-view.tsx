@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 
 import {
     DndContext,
@@ -23,19 +23,62 @@ import { Board } from '@/db/schema/board'
 
 import { ColumnCard } from './column-card'
 import { CreateColumnButton } from './create-column-button'
+import { CardDetailsPanel } from './card-details-panel'
+import { BoardList } from './board-list'
+import { BoardCalendar } from './board-calendar'
 
 import {
     useBoardDnd,
     ColumnWithCards,
+    CardTagOption,
 } from './use-board-dnd'
+
+import { ViewSwitcher } from '@/components/shared/view-switcher'
+import { useViewMode } from '@/components/shared/use-view-mode'
 
 interface BoardViewProps {
     board: Board
     columns: ColumnWithCards[]
+    availableTags: CardTagOption[]
+    priorityCardsCount: number
+    hasPriorityTag: boolean
 }
 
-export function BoardView({
+/**
+ * `useViewMode` usa `useSearchParams`, que o Next.js exige estar
+ * dentro de uma Suspense boundary (senão a rota inteira perde
+ * prerendering estático). O board em si é sempre dinâmico (dados do
+ * usuário logado), mas mantemos o boundary para seguir a exigência e
+ * não gerar warning de build.
+ */
+export function BoardView(props: BoardViewProps) {
+    return (
+        <Suspense fallback={<BoardViewSkeleton columns={props.columns} />}>
+            <BoardViewInner {...props} />
+        </Suspense>
+    )
+}
+
+function BoardViewSkeleton({ columns }: { columns: ColumnWithCards[] }) {
+    return (
+        <div className="flex h-full min-w-0 flex-col bg-slate-50">
+            <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
+                {columns.map((column) => (
+                    <div
+                        key={column.id}
+                        className="h-112.5 w-72 animate-pulse rounded-xl border border-slate-200 bg-slate-100"
+                    />
+                ))}
+            </div>
+        </div>
+    )
+}
+
+function BoardViewInner({
     columns: initialColumns,
+    availableTags,
+    priorityCardsCount,
+    hasPriorityTag,
 }: BoardViewProps) {
     /**
      * Impede o DndContext de ser renderizado no servidor.
@@ -60,6 +103,25 @@ export function BoardView({
     } = useBoardDnd(initialColumns)
 
     const [search, setSearch] = useState('')
+    const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
+
+    const { view, setView, isMobile } = useViewMode()
+
+    const allColumns = useMemo(
+        () => columns.map((c) => ({ id: c.id, title: c.title, type: c.type })),
+        [columns]
+    )
+
+    const selectedCard = useMemo(() => {
+        if (!selectedCardId) return null
+
+        for (const column of columns) {
+            const found = column.cards.find((c) => c.id === selectedCardId)
+            if (found) return found
+        }
+
+        return null
+    }, [columns, selectedCardId])
 
     const sensors = useSensors(
         useSensor(PointerSensor, {
@@ -93,6 +155,20 @@ export function BoardView({
         }))
     }, [columns, search])
 
+    // Usado pelas views de Lista e Calendário — funcionam sobre os
+    // mesmos dados (já filtrados pela busca), só mudam a forma de
+    // apresentar. Nenhum dado novo é buscado no servidor.
+    const flattenedCards = useMemo(
+        () =>
+            filteredColumns.flatMap((column) =>
+                column.cards.map((card) => ({
+                    ...card,
+                    columnTitle: column.title,
+                }))
+            ),
+        [filteredColumns]
+    )
+
     const inProgressCards = columns
         .filter(
             (column) =>
@@ -119,7 +195,7 @@ export function BoardView({
         <div className="flex h-full min-w-0 flex-col bg-slate-50">
 
             {/* TOPO */}
-            <div className="shrink-0 px-6 pt-5">
+            <div className="shrink-0 px-4 pt-5 sm:px-6">
 
                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
 
@@ -155,7 +231,7 @@ export function BoardView({
 
                         <div className="hidden max-w-47.5 rounded-xl bg-blue-50 px-4 py-3 text-blue-600 xl:block">
                             <p className="text-sm italic">
-                                “Disciplina hoje, resultados amanhã.”
+                                &ldquo;Disciplina hoje, resultados amanhã.&rdquo;
                             </p>
                         </div>
 
@@ -185,8 +261,14 @@ export function BoardView({
                             </p>
 
                             <p className="text-xl font-bold text-slate-900">
-                                0
+                                {hasPriorityTag ? priorityCardsCount : '—'}
                             </p>
+
+                            {!hasPriorityTag && (
+                                <p className="mt-0.5 text-[11px] text-slate-400">
+                                    Crie a tag &ldquo;Prioridade máxima&rdquo;
+                                </p>
+                            )}
                         </div>
 
                     </div>
@@ -196,34 +278,11 @@ export function BoardView({
                 {/* TOOLBAR */}
                 <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 lg:flex-row lg:items-center lg:justify-between">
 
-                    <div className="flex rounded-xl border border-slate-200 bg-white p-1">
-
-                        <button
-                            type="button"
-                            className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600"
-                        >
-                            Quadro
-                        </button>
-
-                        <button
-                            type="button"
-                            className="px-4 py-2 text-sm text-slate-500"
-                        >
-                            Lista
-                        </button>
-
-                        <button
-                            type="button"
-                            className="px-4 py-2 text-sm text-slate-500"
-                        >
-                            Calendário
-                        </button>
-
-                    </div>
+                    <ViewSwitcher view={view} onChange={setView} isMobile={isMobile} />
 
                     <div className="flex flex-wrap gap-3">
 
-                        {/* BUSCA */}
+                        {/* BUSCA — funciona nas 3 views, sobre os mesmos dados já carregados */}
                         <input
                             type="text"
                             value={search}
@@ -233,7 +292,7 @@ export function BoardView({
                                 )
                             }
                             placeholder="Buscar tarefa..."
-                            className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                            className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-base outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm"
                         />
 
                     </div>
@@ -242,91 +301,130 @@ export function BoardView({
 
             </div>
 
-            {/* BOARD */}
-            <main className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
+            {/* CONTEÚDO */}
+            <main
+                className={
+                    view === 'board'
+                        ? 'min-h-0 flex-1 overflow-x-auto overflow-y-hidden'
+                        : 'min-h-0 flex-1 overflow-hidden'
+                }
+            >
 
-                {mounted ? (
+                {view === 'board' && (
 
-                    <DndContext
-                        sensors={sensors}
-                        collisionDetection={
-                            closestCorners
-                        }
-                        onDragStart={
-                            handleDragStart
-                        }
-                        onDragOver={
-                            handleDragOver
-                        }
-                        onDragEnd={
-                            handleDragEnd
-                        }
-                    >
+                    mounted ? (
 
-                        <SortableContext
-                            items={filteredColumns.map(
-                                (column) =>
-                                    column.id
-                            )}
-                            strategy={
-                                horizontalListSortingStrategy
+                        <DndContext
+                            sensors={sensors}
+                            collisionDetection={
+                                closestCorners
+                            }
+                            onDragStart={
+                                handleDragStart
+                            }
+                            onDragOver={
+                                handleDragOver
+                            }
+                            onDragEnd={
+                                handleDragEnd
                             }
                         >
 
-                            <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
-
-                                {filteredColumns.map(
-                                    (column) => (
-
-                                        <ColumnCard
-                                            key={
-                                                column.id
-                                            }
-                                            column={
-                                                column
-                                            }
-                                            cards={
-                                                column.cards
-                                            }
-                                        />
-
-                                    )
-                                )}
-
-                                <CreateColumnButton />
-
-                            </div>
-
-                        </SortableContext>
-
-                    </DndContext>
-
-                ) : (
-
-                    /*
-                     * Placeholder enquanto o componente
-                     * ainda não foi montado no navegador.
-                     *
-                     * Isso evita o hydration mismatch.
-                     */
-                    <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
-
-                        {initialColumns.map(
-                            (column) => (
-                                <div
-                                    key={
+                            <SortableContext
+                                items={filteredColumns.map(
+                                    (column) =>
                                         column.id
-                                    }
-                                    className="h-112.5 w-72 animate-pulse rounded-xl border border-slate-200 bg-slate-100"
-                                />
-                            )
-                        )}
+                                )}
+                                strategy={
+                                    horizontalListSortingStrategy
+                                }
+                            >
 
-                    </div>
+                                <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
+
+                                    {filteredColumns.map(
+                                        (column) => (
+
+                                            <ColumnCard
+                                                key={
+                                                    column.id
+                                                }
+                                                column={
+                                                    column
+                                                }
+                                                cards={
+                                                    column.cards
+                                                }
+                                                allColumns={allColumns}
+                                                availableTags={availableTags}
+                                                onOpenCard={setSelectedCardId}
+                                            />
+
+                                        )
+                                    )}
+
+                                    <CreateColumnButton />
+
+                                </div>
+
+                            </SortableContext>
+
+                        </DndContext>
+
+                    ) : (
+
+                        /*
+                         * Placeholder enquanto o componente
+                         * ainda não foi montado no navegador.
+                         *
+                         * Isso evita o hydration mismatch.
+                         */
+                        <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
+
+                            {initialColumns.map(
+                                (column) => (
+                                    <div
+                                        key={
+                                            column.id
+                                        }
+                                        className="h-112.5 w-72 animate-pulse rounded-xl border border-slate-200 bg-slate-100"
+                                    />
+                                )
+                            )}
+
+                        </div>
+
+                    )
 
                 )}
 
+                {view === 'list' && (
+                    <BoardList
+                        cards={flattenedCards}
+                        allColumns={allColumns}
+                        availableTags={availableTags}
+                        onOpenCard={setSelectedCardId}
+                    />
+                )}
+
+                {view === 'calendar' && (
+                    <BoardCalendar
+                        cards={flattenedCards}
+                        onOpenCard={setSelectedCardId}
+                    />
+                )}
+
             </main>
+
+            <CardDetailsPanel
+                card={selectedCard}
+                open={selectedCard !== null}
+                onOpenChange={(open) => {
+                    if (!open) setSelectedCardId(null)
+                }}
+                columns={allColumns}
+                availableTags={availableTags}
+            />
 
         </div>
     )

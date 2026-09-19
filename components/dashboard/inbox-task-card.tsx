@@ -22,6 +22,7 @@ interface InboxTaskCardProps {
     priority: "LOW" | "MEDIUM" | "HIGH";
     tags?: TaskTag[];
     availableTags: TaskTag[];
+    stageLabel?: string;
 }
 
 export function InboxTaskCard({
@@ -34,6 +35,7 @@ export function InboxTaskCard({
     priority,
     tags = [],
     availableTags,
+    stageLabel,
 }: InboxTaskCardProps) {
     return (
         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md">
@@ -93,8 +95,14 @@ export function InboxTaskCard({
                 </div>
             )}
 
-            {/* DATA */}
-            <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-400">
+            {/* DATA + ESTÁGIO */}
+            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
+                {stageLabel && (
+                    <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
+                        {stageLabel}
+                    </span>
+                )}
+
                 {plannedDate ? (
                     <>
                         <CalendarDays className="size-3.5" />

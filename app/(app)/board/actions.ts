@@ -5,6 +5,9 @@ import { revalidatePath } from 'next/cache'
 import { db } from '@/db'
 import { boardColumn } from '@/db/schema/column'
 import { card } from '@/db/schema/card'
+import { cardTag } from '@/db/schema/card-tag'
+import { cardChecklistItem } from '@/db/schema/card-checklist-item'
+import { tag } from '@/db/schema/tag'
 import { authBoardActionClient } from '@/lib/safe-action'
 import { eq, max, and, asc, ne } from 'drizzle-orm'
 import {
@@ -12,7 +15,14 @@ import {
     columnTitleSchema,
     columnTypeSchema,
 } from '@/lib/validators/column'
-import { cardNameSchema } from '@/lib/validators/card'
+import {
+    cardNameSchema,
+    createChecklistItemSchema,
+    deleteChecklistItemSchema,
+    toggleCardTagSchema,
+    toggleChecklistItemSchema,
+    updateCardDetailsSchema,
+} from '@/lib/validators/card'
 
 const createColumnSchema = z.object({
     title: columnTitleSchema,
@@ -28,6 +38,7 @@ const updateColumnSchema = z.object({
 
 const deleteColumnSchema = z.object({
     id: z.string().min(1),
+    targetColumnId: z.string().min(1).optional(),
 })
 
 const reorderColumnsSchema = z.object({
@@ -124,7 +135,68 @@ export const deleteColumn = authBoardActionClient
 
         if (!col) throw new Error('Coluna não encontrada.')
 
-        await db.delete(boardColumn).where(eq(boardColumn.id, parsedInput.id))
+        const cardsInColumn = await db
+            .select({ id: card.id })
+            .from(card)
+            .where(eq(card.columnId, parsedInput.id))
+
+        if (cardsInColumn.length > 0) {
+            if (!parsedInput.targetColumnId) {
+                throw new Error(
+                    `Esta coluna possui ${cardsInColumn.length} tarefa(s). Selecione para onde movê-las antes de excluir.`
+                )
+            }
+
+            if (parsedInput.targetColumnId === parsedInput.id) {
+                throw new Error(
+                    'A coluna de destino não pode ser a mesma que está sendo excluída.'
+                )
+            }
+
+            const [targetCol] = await db
+                .select({ id: boardColumn.id })
+                .from(boardColumn)
+                .where(
+                    and(
+                        eq(boardColumn.id, parsedInput.targetColumnId),
+                        eq(boardColumn.boardId, ctx.boardId)
+                    )
+                )
+                .limit(1)
+
+            if (!targetCol) {
+                throw new Error('Coluna de destino não encontrada.')
+            }
+
+            await db.transaction(async (tx) => {
+                const [result] = await tx
+                    .select({ maxPos: max(card.position) })
+                    .from(card)
+                    .where(eq(card.columnId, parsedInput.targetColumnId!))
+
+                let nextPosition = (result?.maxPos ?? -1) + 1
+
+                for (const item of cardsInColumn) {
+                    await tx
+                        .update(card)
+                        .set({
+                            columnId: parsedInput.targetColumnId,
+                            position: nextPosition,
+                        })
+                        .where(eq(card.id, item.id))
+
+                    nextPosition += 1
+                }
+
+                await tx
+                    .delete(boardColumn)
+                    .where(eq(boardColumn.id, parsedInput.id))
+            })
+        } else {
+            await db
+                .delete(boardColumn)
+                .where(eq(boardColumn.id, parsedInput.id))
+        }
 
         revalidatePath('/board')
     })
@@ -344,6 +416,159 @@ export const moveCard = authBoardActionClient
                     .where(eq(card.id, cardId))
             }
         })
+
+        revalidatePath('/board')
+    })
+
+/**
+ * Verifica ownership do card via join com boardColumn (mesmo padrão
+ * usado em updateCard/deleteCard/moveCard acima).
+ */
+async function findOwnedCard(cardId: string, boardId: string) {
+    const [row] = await db
+        .select({ id: card.id })
+        .from(card)
+        .innerJoin(boardColumn, eq(card.columnId, boardColumn.id))
+        .where(and(eq(card.id, cardId), eq(boardColumn.boardId, boardId)))
+        .limit(1)
+
+    return row
+}
+
+export const updateCardDetails = authBoardActionClient
+    .inputSchema(updateCardDetailsSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const owned = await findOwnedCard(parsedInput.cardId, ctx.boardId)
+
+        if (!owned) throw new Error('Card não encontrado.')
+
+        const updates: {
+            description?: string | null
+            dueDate?: Date | null
+        } = {}
+
+        if (parsedInput.description !== undefined) {
+            updates.description = parsedInput.description?.trim() || null
+        }
+
+        if (parsedInput.dueDate !== undefined) {
+            updates.dueDate = parsedInput.dueDate
+                ? new Date(`${parsedInput.dueDate}T00:00:00`)
+                : null
+        }
+
+        await db.update(card).set(updates).where(eq(card.id, parsedInput.cardId))
+
+        revalidatePath('/board')
+    })
+
+export const toggleCardTag = authBoardActionClient
+    .inputSchema(toggleCardTagSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const owned = await findOwnedCard(parsedInput.cardId, ctx.boardId)
+
+        if (!owned) throw new Error('Card não encontrado.')
+
+        const [ownedTag] = await db
+            .select({ id: tag.id })
+            .from(tag)
+            .where(and(eq(tag.id, parsedInput.tagId), eq(tag.userId, ctx.user.id)))
+            .limit(1)
+
+        if (!ownedTag) throw new Error('Tag não encontrada.')
+
+        if (parsedInput.attach) {
+            await db
+                .insert(cardTag)
+                .values({
+                    cardId: parsedInput.cardId,
+                    tagId: parsedInput.tagId,
+                })
+                .onConflictDoNothing()
+        } else {
+            await db
+                .delete(cardTag)
+                .where(
+                    and(
+                        eq(cardTag.cardId, parsedInput.cardId),
+                        eq(cardTag.tagId, parsedInput.tagId)
+                    )
+                )
+        }
+
+        revalidatePath('/board')
+    })
+
+export const createChecklistItem = authBoardActionClient
+    .inputSchema(createChecklistItemSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const owned = await findOwnedCard(parsedInput.cardId, ctx.boardId)
+
+        if (!owned) throw new Error('Card não encontrado.')
+
+        const [result] = await db
+            .select({ maxPos: max(cardChecklistItem.position) })
+            .from(cardChecklistItem)
+            .where(eq(cardChecklistItem.cardId, parsedInput.cardId))
+
+        const nextPosition = (result?.maxPos ?? -1) + 1
+
+        await db.insert(cardChecklistItem).values({
+            cardId: parsedInput.cardId,
+            title: parsedInput.title,
+            position: nextPosition,
+        })
+
+        revalidatePath('/board')
+    })
+
+export const toggleChecklistItem = authBoardActionClient
+    .inputSchema(toggleChecklistItemSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const [row] = await db
+            .select({ id: cardChecklistItem.id })
+            .from(cardChecklistItem)
+            .innerJoin(card, eq(cardChecklistItem.cardId, card.id))
+            .innerJoin(boardColumn, eq(card.columnId, boardColumn.id))
+            .where(
+                and(
+                    eq(cardChecklistItem.id, parsedInput.id),
+                    eq(boardColumn.boardId, ctx.boardId)
+                )
+            )
+            .limit(1)
+
+        if (!row) throw new Error('Item não encontrado.')
+
+        await db
+            .update(cardChecklistItem)
+            .set({ completed: parsedInput.completed })
+            .where(eq(cardChecklistItem.id, parsedInput.id))
+
+        revalidatePath('/board')
+    })
+
+export const deleteChecklistItem = authBoardActionClient
+    .inputSchema(deleteChecklistItemSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const [row] = await db
+            .select({ id: cardChecklistItem.id })
+            .from(cardChecklistItem)
+            .innerJoin(card, eq(cardChecklistItem.cardId, card.id))
+            .innerJoin(boardColumn, eq(card.columnId, boardColumn.id))
+            .where(
+                and(
+                    eq(cardChecklistItem.id, parsedInput.id),
+                    eq(boardColumn.boardId, ctx.boardId)
+                )
+            )
+            .limit(1)
+
+        if (!row) throw new Error('Item não encontrado.')
+
+        await db
+            .delete(cardChecklistItem)
+            .where(eq(cardChecklistItem.id, parsedInput.id))
 
         revalidatePath('/board')
     })

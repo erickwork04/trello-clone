@@ -8,22 +8,28 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 
 import { BoardColumn } from '@/db/schema/column'
-import { Card } from '@/db/schema/card'
 
 import { columnColorToCss } from '@/lib/validators/column'
 
 import { ColumnHeader } from './column-header'
 import { CardItem } from './card-item'
 import { CreateCardButton } from './create-card-button'
+import { BoardCard, CardTagOption } from './use-board-dnd'
 
 interface ColumnCardProps {
     column: BoardColumn
-    cards: Card[]
+    cards: BoardCard[]
+    allColumns: Array<{ id: string; title: string; type: string }>
+    availableTags: CardTagOption[]
+    onOpenCard: (cardId: string) => void
 }
 
 export function ColumnCard({
     column,
     cards,
+    allColumns,
+    availableTags,
+    onOpenCard,
 }: ColumnCardProps) {
     const {
         attributes,
@@ -69,6 +75,8 @@ export function ColumnCard({
                     column={column}
                     listeners={listeners}
                     attributes={attributes}
+                    allColumns={allColumns}
+                    cardsInColumn={cards.length}
                 />
             </div>
 
@@ -86,6 +94,9 @@ export function ColumnCard({
                         <CardItem
                             key={card.id}
                             card={card}
+                            allColumns={allColumns}
+                            availableTags={availableTags}
+                            onOpenCard={onOpenCard}
                         />
                     ))}
 
