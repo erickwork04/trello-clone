@@ -29,12 +29,19 @@ export function WaitlistForm({ onSuccess }: WaitlistFormProps) {
         try {
             const result = await addToWaitlist(formData);
 
-            if (!result.success) {
-                toast.error(result.message);
+            if (result?.serverError) {
+                toast.error(result.serverError);
                 return;
             }
 
-            toast.success(result.message);
+            if (result?.validationErrors) {
+                toast.error("Preencha todos os campos corretamente.");
+                return;
+            }
+
+            toast.success(
+                result?.data?.message ?? "Você entrou na lista de espera!"
+            );
 
             setFormData({
                 name: "",

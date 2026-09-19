@@ -1,43 +1,59 @@
 'use server'
 
 import { and, eq, isNull } from 'drizzle-orm'
-import { headers } from 'next/headers'
+import { revalidatePath } from 'next/cache'
 
-import { auth } from '@/lib/auth'
 import { db } from '@/db'
-import { focusSession } from '@/db/schema'
+import { focusSession, task } from '@/db/schema'
+import { authActionClient } from '@/lib/safe-action'
+import { startFocusSchema } from '@/lib/validators/focus'
 
-export async function startFocus(taskId: string) {
-    const session = await auth.api.getSession({
-        headers: await headers(),
-    })
+export const startFocus = authActionClient
+    .inputSchema(startFocusSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const createdSession = await db.transaction(async (tx) => {
+            const [ownedTask] = await tx
+                .select({ id: task.id })
+                .from(task)
+                .where(
+                    and(
+                        eq(task.id, parsedInput.taskId),
+                        eq(task.userId, ctx.user.id)
+                    )
+                )
+                .limit(1)
 
-    if (!session) {
-        throw new Error('Não autorizado')
-    }
+            if (!ownedTask) {
+                throw new Error('Tarefa não encontrada.')
+            }
 
-    const activeSession = await db
-        .select()
-        .from(focusSession)
-        .where(
-            and(
-                eq(focusSession.userId, session.user.id),
-                isNull(focusSession.endedAt)
-            )
-        )
-        .limit(1)
+            const activeSession = await tx
+                .select()
+                .from(focusSession)
+                .where(
+                    and(
+                        eq(focusSession.userId, ctx.user.id),
+                        isNull(focusSession.endedAt)
+                    )
+                )
+                .limit(1)
 
-    if (activeSession.length > 0) {
-        return activeSession[0]
-    }
+            if (activeSession.length > 0) {
+                return activeSession[0]
+            }
 
-    const [createdSession] = await db
-        .insert(focusSession)
-        .values({
-            userId: session.user.id,
-            taskId,
+            const [inserted] = await tx
+                .insert(focusSession)
+                .values({
+                    userId: ctx.user.id,
+                    taskId: parsedInput.taskId,
+                })
+                .returning()
+
+            return inserted
         })
-        .returning()
 
-    return createdSession
-}
+        revalidatePath('/hoje')
+
+        return createdSession
+    })

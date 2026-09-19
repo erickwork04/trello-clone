@@ -3,8 +3,9 @@
 import { useMemo, useState, useTransition } from "react";
 import { Loader2, Plus, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
-import { createInboxTask } from "@/app/(dashboard)/inbox/actions";
+import { createInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud";
 
 interface TagOption {
     id: string;
@@ -60,13 +61,18 @@ export function NewInboxTaskButton({
         }
 
         startTransition(async () => {
-            await createInboxTask({
+            const result = await createInboxTask({
                 title,
                 description,
                 priority,
                 plannedDate: plannedDate || undefined,
                 tagIds: selectedTagIds,
             });
+
+            if (result?.serverError) {
+                toast.error(result.serverError);
+                return;
+            }
 
             resetForm();
             setOpen(false);

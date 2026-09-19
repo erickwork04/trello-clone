@@ -2,6 +2,8 @@
 
 import { useTransition } from 'react'
 
+import { toast } from 'sonner'
+
 import { toggleWeekGoal } from '../_actions/toggle-week-goal'
 
 interface WeekGoalItemProps {
@@ -20,10 +22,14 @@ export function WeekGoalItem({
 
     function handleToggle() {
         startTransition(async () => {
-            await toggleWeekGoal(
-                id,
-                !completed,
-            )
+            const result = await toggleWeekGoal({
+                goalId: id,
+                completed: !completed,
+            })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+            }
         })
     }
 

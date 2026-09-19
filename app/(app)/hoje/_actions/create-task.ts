@@ -1,78 +1,57 @@
 'use server'
 
-import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 
-import { auth } from '@/lib/auth'
 import { db } from '@/db'
 import { task } from '@/db/schema/task'
+import { authActionClient } from '@/lib/safe-action'
+import { createTaskSchema } from '@/lib/validators/task'
 
-interface CreateTaskInput {
-    title: string
-    destination: 'TODAY' | 'INBOX'
-    area?: 'WORK' | 'STUDIES' | 'PERSONAL'
-    priority?: 'LOW' | 'MEDIUM' | 'HIGH'
-    plannedDate?: string
-    description?: string
-    plannedTime?: string
-}
+export const createTask = authActionClient
+    .inputSchema(createTaskSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        if (parsedInput.destination === 'INBOX') {
+            await db.insert(task).values({
+                userId: ctx.user.id,
+                title: parsedInput.title,
+                description: parsedInput.description?.trim() || null,
+                area: 'INBOX',
+                status: 'BACKLOG',
+                priority: 'MEDIUM',
+                plannedDate: null,
+                plannedTime: null,
+            })
 
-export async function createTask(input: CreateTaskInput) {
-    const session = await auth.api.getSession({
-        headers: await headers(),
-    })
+            revalidatePath('/hoje')
+            revalidatePath('/inbox')
 
-    if (!session) {
-        throw new Error('Não autorizado')
-    }
+            return
+        }
 
-    if (!input.title.trim()) {
-        throw new Error('O título da tarefa é obrigatório')
-    }
+        const [year, month, day] = parsedInput.plannedDate
+            .split('-')
+            .map(Number)
 
-    if (input.destination === 'INBOX') {
+        const plannedDate = new Date(year, month - 1, day)
+
+        const today = new Date()
+
+        today.setHours(0, 0, 0, 0)
+        plannedDate.setHours(0, 0, 0, 0)
+
+        const isToday = plannedDate.getTime() === today.getTime()
+
         await db.insert(task).values({
-            userId: session.user.id,
-            title: input.title.trim(),
-            area: 'INBOX',
-            status: 'BACKLOG',
-            priority: 'MEDIUM',
-            plannedDate: null,
-            plannedTime: null,
+            userId: ctx.user.id,
+            title: parsedInput.title,
+            description: parsedInput.description?.trim() || null,
+            area: parsedInput.area,
+            priority: parsedInput.priority,
+            status: isToday ? 'TODAY' : 'WEEK',
+            plannedDate,
+            plannedTime: parsedInput.plannedTime || null,
         })
 
         revalidatePath('/hoje')
-        revalidatePath('/inbox')
-
-        return
-    }
-
-    if (!input.area || !input.priority || !input.plannedDate) {
-        throw new Error('Preencha os dados da tarefa')
-    }
-
-    const [year, month, day] = input.plannedDate.split('-').map(Number)
-
-    const plannedDate = new Date(year, month - 1, day)
-
-    const today = new Date()
-
-    today.setHours(0, 0, 0, 0)
-    plannedDate.setHours(0, 0, 0, 0)
-
-    const isToday = plannedDate.getTime() === today.getTime()
-
-    await db.insert(task).values({
-        userId: session.user.id,
-        title: input.title.trim(),
-        description: input.description?.trim() || null,
-        area: input.area,
-        priority: input.priority,
-        status: isToday ? 'TODAY' : 'WEEK',
-        plannedDate,
-        plannedTime: input.plannedTime || null,
+        revalidatePath('/semana')
     })
-
-    revalidatePath('/hoje')
-    revalidatePath('/semana')
-}

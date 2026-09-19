@@ -1,45 +1,39 @@
 'use server'
 
 import { and, eq, isNull } from 'drizzle-orm'
-import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 
-import { auth } from '@/lib/auth'
 import { db } from '@/db'
 import { focusSession } from '@/db/schema'
+import { authActionClient } from '@/lib/safe-action'
+import { focusSessionIdSchema } from '@/lib/validators/focus'
 
-export async function resumeFocus(sessionId: string) {
-    const session = await auth.api.getSession({
-        headers: await headers(),
-    })
-
-    if (!session) {
-        throw new Error('Não autorizado')
-    }
-
-    const [focus] = await db
-        .select()
-        .from(focusSession)
-        .where(
-            and(
-                eq(focusSession.id, sessionId),
-                eq(focusSession.userId, session.user.id),
-                isNull(focusSession.endedAt)
+export const resumeFocus = authActionClient
+    .inputSchema(focusSessionIdSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const [focus] = await db
+            .select()
+            .from(focusSession)
+            .where(
+                and(
+                    eq(focusSession.id, parsedInput.sessionId),
+                    eq(focusSession.userId, ctx.user.id),
+                    isNull(focusSession.endedAt)
+                )
             )
-        )
-        .limit(1)
+            .limit(1)
 
-    if (!focus || !focus.pausedAt) {
-        return
-    }
+        if (!focus || !focus.pausedAt) {
+            return
+        }
 
-    await db
-        .update(focusSession)
-        .set({
-            startedAt: new Date(),
-            pausedAt: null,
-        })
-        .where(eq(focusSession.id, sessionId))
+        await db
+            .update(focusSession)
+            .set({
+                startedAt: new Date(),
+                pausedAt: null,
+            })
+            .where(eq(focusSession.id, parsedInput.sessionId))
 
-    revalidatePath('/hoje')
-}
+        revalidatePath('/hoje')
+    })

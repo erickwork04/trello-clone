@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { Loader2, Pencil, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import {
     deleteTag,
@@ -50,11 +51,16 @@ export function TagActions({
         }
 
         startTransition(async () => {
-            await updateTag({
+            const result = await updateTag({
                 id: tagId,
                 name: trimmedName,
                 color: tagColor,
             });
+
+            if (result?.serverError) {
+                toast.error(result.serverError);
+                return;
+            }
 
             setEditOpen(false);
             router.refresh();
@@ -63,7 +69,12 @@ export function TagActions({
 
     function handleDelete() {
         startTransition(async () => {
-            await deleteTag(tagId);
+            const result = await deleteTag({ id: tagId });
+
+            if (result?.serverError) {
+                toast.error(result.serverError);
+                return;
+            }
 
             setDeleteOpen(false);
             router.refresh();

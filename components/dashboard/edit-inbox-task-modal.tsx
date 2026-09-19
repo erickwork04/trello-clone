@@ -3,7 +3,8 @@
 import { useMemo, useState, useTransition } from "react";
 import { Loader2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { updateInboxTask } from "@/app/(dashboard)/inbox/actions";
+import { toast } from "sonner";
+import { updateInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud";
 
 interface TagOption { id: string; name: string; color: string; }
 interface Props {
@@ -34,7 +35,13 @@ export function EditInboxTaskModal({ open, onClose, task, availableTags }: Props
         if (!title.trim()) return;
 
         startTransition(async () => {
-            await updateInboxTask({ taskId: task.id, title, description, priority, plannedDate: plannedDate || undefined, tagIds: selectedTagIds });
+            const result = await updateInboxTask({ taskId: task.id, title, description, priority, plannedDate: plannedDate || undefined, tagIds: selectedTagIds });
+
+            if (result?.serverError) {
+                toast.error(result.serverError);
+                return;
+            }
+
             onClose();
             router.refresh();
         });

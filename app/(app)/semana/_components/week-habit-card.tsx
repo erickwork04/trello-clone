@@ -1,6 +1,7 @@
 'use client'
 
 import { useTransition } from 'react'
+import { toast } from 'sonner'
 
 import { toggleHabit } from '../_actions/toggle-habit'
 
@@ -58,10 +59,14 @@ export function WeekHabitCard({
         date: Date,
     ) {
         startTransition(async () => {
-            await toggleHabit({
+            const result = await toggleHabit({
                 habitId: id,
                 date: getDateKey(date),
             })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+            }
         })
     }
 

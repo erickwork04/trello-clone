@@ -55,11 +55,11 @@ export function WorkTaskCard({
         }
 
         startTransition(async () => {
-            await completeTask(
-                task.id,
+            await completeTask({
+                taskId: task.id,
                 completed,
-                'BACKLOG'
-            )
+                returnStatus: 'BACKLOG',
+            })
         })
     }
 

@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState, useTransition } from "react"
-import { moveInboxTask } from "@/app/(dashboard)/inbox/actions"
+import { toast } from "sonner"
+import { moveInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud"
 import { InboxColumn } from "@/components/dashboard/inbox-column"
 import { InboxTaskCard } from "@/components/dashboard/inbox-task-card"
 
@@ -65,6 +66,8 @@ export function InboxBoard({
             return
         }
 
+        const previousItems = items
+
         setItems((current) =>
             current.map((item) =>
                 item.id === taskId
@@ -77,7 +80,12 @@ export function InboxBoard({
         )
 
         startTransition(async () => {
-            await moveInboxTask(taskId, stage)
+            const result = await moveInboxTask({ taskId, inboxStage: stage })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+                setItems(previousItems)
+            }
         })
     }
 

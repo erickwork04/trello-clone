@@ -1,27 +1,28 @@
 'use server'
 
-import { eq } from 'drizzle-orm'
-import { headers } from 'next/headers'
+import { and, eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
 
-import { auth } from '@/lib/auth'
 import { db } from '@/db'
 import { task } from '@/db/schema'
+import { authActionClient } from '@/lib/safe-action'
+import { taskIdSchema } from '@/lib/validators/task'
 
-export async function deleteTask(taskId: string) {
-    const session = await auth.api.getSession({
-        headers: await headers(),
+export const deleteTask = authActionClient
+    .inputSchema(taskIdSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        await db
+            .delete(task)
+            .where(
+                and(
+                    eq(task.id, parsedInput.taskId),
+                    eq(task.userId, ctx.user.id)
+                )
+            )
+
+        revalidatePath('/hoje')
+        revalidatePath('/semana')
+        revalidatePath('/inbox')
+        revalidatePath('/estudos')
+        revalidatePath('/pessoal')
     })
-
-    if (!session) {
-        throw new Error('Não autorizado')
-    }
-
-    await db.delete(task).where(eq(task.id, taskId))
-
-    revalidatePath('/hoje')
-    revalidatePath('/semana')
-    revalidatePath('/inbox')
-    revalidatePath('/estudos')
-    revalidatePath('/pessoal')
-}

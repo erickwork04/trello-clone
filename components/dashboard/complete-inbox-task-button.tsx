@@ -3,8 +3,9 @@
 import { useTransition } from "react"
 import { Check, Loader2 } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
-import { completeInboxTask } from "@/app/(dashboard)/inbox/actions"
+import { completeInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud"
 
 interface CompleteInboxTaskButtonProps {
     taskId: string
@@ -18,7 +19,13 @@ export function CompleteInboxTaskButton({
 
     function handleComplete() {
         startTransition(async () => {
-            await completeInboxTask(taskId)
+            const result = await completeInboxTask({ taskId })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+                return
+            }
+
             router.refresh()
         })
     }

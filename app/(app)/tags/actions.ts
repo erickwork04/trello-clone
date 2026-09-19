@@ -1,88 +1,73 @@
 'use server'
 
-import { headers } from 'next/headers'
 import { and, eq } from 'drizzle-orm'
 import { revalidatePath } from 'next/cache'
+import { z } from 'zod'
 
 import { db } from '@/db'
 import { tag } from '@/db/schema/tag'
-import { auth } from '@/lib/auth'
+import { authActionClient } from '@/lib/safe-action'
+import { tagColorSchema, tagIdSchema, tagNameSchema } from '@/lib/validators/tag'
 
-interface CreateTagInput {
-    name: string
-    color: string
-}
+const createTagSchema = z.object({
+    name: tagNameSchema,
+    color: tagColorSchema,
+})
 
-interface UpdateTagInput {
-    id: string
-    name: string
-    color: string
-}
+const updateTagSchema = z.object({
+    id: tagIdSchema,
+    name: tagNameSchema,
+    color: tagColorSchema,
+})
 
-export async function createTag({ name, color }: CreateTagInput) {
-    const session = await auth.api.getSession({
-        headers: await headers(),
-    })
+const deleteTagSchema = z.object({
+    id: tagIdSchema,
+})
 
-    if (!session) {
-        throw new Error('Não autorizado.')
-    }
-
-    const trimmedName = name.trim()
-
-    if (!trimmedName) {
-        throw new Error('Informe o nome da tag.')
-    }
-
-    await db.insert(tag).values({
-        id: crypto.randomUUID(),
-        userId: session.user.id,
-        name: trimmedName,
-        color,
-    })
-
-    revalidatePath('/tags')
-}
-
-export async function updateTag({ id, name, color }: UpdateTagInput) {
-    const session = await auth.api.getSession({
-        headers: await headers(),
-    })
-
-    if (!session) {
-        throw new Error('Não autorizado.')
-    }
-
-    const trimmedName = name.trim()
-
-    if (!trimmedName) {
-        throw new Error('Informe o nome da tag.')
-    }
-
-    await db
-        .update(tag)
-        .set({
-            name: trimmedName,
-            color,
-            updatedAt: new Date(),
+export const createTag = authActionClient
+    .inputSchema(createTagSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        await db.insert(tag).values({
+            id: crypto.randomUUID(),
+            userId: ctx.user.id,
+            name: parsedInput.name,
+            color: parsedInput.color,
         })
-        .where(and(eq(tag.id, id), eq(tag.userId, session.user.id)))
 
-    revalidatePath('/tags')
-}
-
-export async function deleteTag(id: string) {
-    const session = await auth.api.getSession({
-        headers: await headers(),
+        revalidatePath('/tags')
     })
 
-    if (!session) {
-        throw new Error('Não autorizado.')
-    }
+export const updateTag = authActionClient
+    .inputSchema(updateTagSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const [existing] = await db
+            .select({ id: tag.id })
+            .from(tag)
+            .where(and(eq(tag.id, parsedInput.id), eq(tag.userId, ctx.user.id)))
+            .limit(1)
 
-    await db
-        .delete(tag)
-        .where(and(eq(tag.id, id), eq(tag.userId, session.user.id)))
+        if (!existing) {
+            throw new Error('Tag não encontrada.')
+        }
 
-    revalidatePath('/tags')
-}
+        await db
+            .update(tag)
+            .set({
+                name: parsedInput.name,
+                color: parsedInput.color,
+                updatedAt: new Date(),
+            })
+            .where(and(eq(tag.id, parsedInput.id), eq(tag.userId, ctx.user.id)))
+
+        revalidatePath('/tags')
+    })
+
+export const deleteTag = authActionClient
+    .inputSchema(deleteTagSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        await db
+            .delete(tag)
+            .where(and(eq(tag.id, parsedInput.id), eq(tag.userId, ctx.user.id)))
+
+        revalidatePath('/tags')
+    })

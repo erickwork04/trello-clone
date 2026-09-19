@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { toast } from 'sonner'
 import { createWeekPlan } from '../_actions/create-week-plan'
 import {
     Plus,
@@ -70,7 +71,7 @@ export function WeekPlannerDialog({
 
     function handleSave() {
         startTransition(async () => {
-            await createWeekPlan({
+            const result = await createWeekPlan({
                 weekStart,
                 goals,
                 habits: habits
@@ -84,6 +85,11 @@ export function WeekPlannerDialog({
                             habit.targetDays,
                     })),
             })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+                return
+            }
 
             setOpen(false)
         })

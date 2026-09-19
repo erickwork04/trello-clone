@@ -2,6 +2,7 @@
 
 import { useTransition } from 'react'
 import { Clock3, MoreVertical, Star } from 'lucide-react'
+import { toast } from 'sonner'
 import { completeTask } from '@/app/(app)/hoje/_actions/complete-task'
 import { AreaBadge } from './area-badge'
 import { toggleTopPriority } from '@/app/(app)/hoje/_actions/toggle-top-priority'
@@ -36,7 +37,14 @@ export function TaskRow({
         }
 
         startTransition(async () => {
-            await toggleTopPriority(id, topPriority)
+            const result = await toggleTopPriority({
+                taskId: id,
+                currentValue: topPriority,
+            })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+            }
         })
     }
 
@@ -46,7 +54,14 @@ export function TaskRow({
         }
 
         startTransition(async () => {
-            await completeTask(id, completed)
+            const result = await completeTask({
+                taskId: id,
+                completed,
+            })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+            }
         })
     }
 

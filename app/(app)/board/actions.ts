@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
 import { db } from '@/db'
 import { boardColumn } from '@/db/schema/column'
 import { card } from '@/db/schema/card'
-import { authActionClient } from '@/lib/safe-action'
+import { authBoardActionClient } from '@/lib/safe-action'
 import { eq, max, and, asc, ne } from 'drizzle-orm'
 import {
     columnColorSchema,
@@ -54,7 +54,7 @@ const moveCardSchema = z.object({
     targetPosition: z.number().int().min(0),
 })
 
-export const createColumn = authActionClient
+export const createColumn = authBoardActionClient
     .inputSchema(createColumnSchema)
     .action(async ({ parsedInput, ctx }) => {
         const [result] = await db
@@ -74,7 +74,7 @@ export const createColumn = authActionClient
         revalidatePath('/board')
     })
 
-export const updateColumn = authActionClient
+export const updateColumn = authBoardActionClient
     .inputSchema(updateColumnSchema)
     .action(async ({ parsedInput, ctx }) => {
         const [col] = await db
@@ -108,7 +108,7 @@ export const updateColumn = authActionClient
         revalidatePath('/board')
     })
 
-export const deleteColumn = authActionClient
+export const deleteColumn = authBoardActionClient
     .inputSchema(deleteColumnSchema)
     .action(async ({ parsedInput, ctx }) => {
         const [col] = await db
@@ -129,7 +129,7 @@ export const deleteColumn = authActionClient
         revalidatePath('/board')
     })
 
-export const reorderColumns = authActionClient
+export const reorderColumns = authBoardActionClient
     .inputSchema(reorderColumnsSchema)
     .action(async ({ parsedInput, ctx }) => {
         await db.transaction(async (tx) => {
@@ -164,7 +164,7 @@ export const reorderColumns = authActionClient
         revalidatePath('/board')
     })
 
-export const createCard = authActionClient
+export const createCard = authBoardActionClient
     .inputSchema(createCardSchema)
     .action(async ({ parsedInput, ctx }) => {
         const [col] = await db
@@ -196,7 +196,7 @@ export const createCard = authActionClient
         revalidatePath('/board')
     })
 
-export const updateCard = authActionClient
+export const updateCard = authBoardActionClient
     .inputSchema(updateCardSchema)
     .action(async ({ parsedInput, ctx }) => {
         const [row] = await db
@@ -221,7 +221,7 @@ export const updateCard = authActionClient
         revalidatePath('/board')
     })
 
-export const deleteCard = authActionClient
+export const deleteCard = authBoardActionClient
     .inputSchema(deleteCardSchema)
     .action(async ({ parsedInput, ctx }) => {
         const [row] = await db
@@ -243,7 +243,7 @@ export const deleteCard = authActionClient
         revalidatePath('/board')
     })
 
-export const moveCard = authActionClient
+export const moveCard = authBoardActionClient
     .inputSchema(moveCardSchema)
     .action(async ({ parsedInput, ctx }) => {
         const { cardId, targetColumnId, targetPosition } = parsedInput

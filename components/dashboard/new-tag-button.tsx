@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { Plus, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 
 import { createTag } from "@/app/(app)/tags/actions";
 
@@ -34,10 +35,15 @@ export function NewTagButton() {
         }
 
         startTransition(async () => {
-            await createTag({
+            const result = await createTag({
                 name: trimmedName,
                 color,
             });
+
+            if (result?.serverError) {
+                toast.error(result.serverError);
+                return;
+            }
 
             setName("");
             setColor(COLORS[0]);

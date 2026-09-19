@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from 'react'
 
 import { Pause, Play, Square } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { startFocus } from '@/app/(app)/hoje/_actions/start-focus'
 import { finishFocus } from '@/app/(app)/hoje/_actions/finish-focus'
@@ -125,7 +126,14 @@ export function FocusTimer({
 
     function handleStart() {
         startTransition(async () => {
-            const focus = await startFocus(taskId)
+            const result = await startFocus({ taskId })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+                return
+            }
+
+            const focus = result?.data
 
             if (!focus) {
                 return
@@ -152,7 +160,12 @@ export function FocusTimer({
         }
 
         startTransition(async () => {
-            await pauseFocus(sessionId)
+            const result = await pauseFocus({ sessionId })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+                return
+            }
 
             setAccumulatedSeconds(
                 elapsedSeconds
@@ -168,7 +181,12 @@ export function FocusTimer({
         }
 
         startTransition(async () => {
-            await resumeFocus(sessionId)
+            const result = await resumeFocus({ sessionId })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+                return
+            }
 
             setStartedAt(new Date())
             setPaused(false)
@@ -181,7 +199,12 @@ export function FocusTimer({
         }
 
         startTransition(async () => {
-            await finishFocus(sessionId)
+            const result = await finishFocus({ sessionId })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+                return
+            }
 
             setSessionId(null)
             setStartedAt(null)
@@ -195,7 +218,7 @@ export function FocusTimer({
         return (
             <div className="flex flex-wrap items-center gap-3">
 
-                <span className="min-w-17.5font-mono text-sm font-semibold text-blue-600">
+                <span className="min-w-17.5 font-mono text-sm font-semibold text-blue-600">
                     {formatSeconds(
                         elapsedSeconds
                     )}

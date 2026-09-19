@@ -1,86 +1,69 @@
 'use server'
 
-import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 import { and, eq } from 'drizzle-orm'
 
-import { auth } from '@/lib/auth'
 import { db } from '@/db'
 import { task } from '@/db/schema/task'
+import { authActionClient } from '@/lib/safe-action'
+import { organizeInboxTaskSchema } from '@/lib/validators/inbox'
 
-type Destination =
-    | 'TODAY_WORK'
-    | 'TODAY_STUDIES'
-    | 'TODAY_PERSONAL'
-    | 'WORK'
-    | 'STUDIES'
-    | 'PERSONAL'
+export const organizeInboxTask = authActionClient
+    .inputSchema(organizeInboxTaskSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
 
-export async function organizeInboxTask(
-    taskId: string,
-    destination: Destination
-) {
-    const session = await auth.api.getSession({
-        headers: await headers(),
-    })
+        const values = {
+            TODAY_WORK: {
+                area: 'WORK' as const,
+                status: 'TODAY' as const,
+                plannedDate: today,
+            },
 
-    if (!session) {
-        throw new Error('Não autorizado')
-    }
+            TODAY_STUDIES: {
+                area: 'STUDIES' as const,
+                status: 'TODAY' as const,
+                plannedDate: today,
+            },
 
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+            TODAY_PERSONAL: {
+                area: 'PERSONAL' as const,
+                status: 'TODAY' as const,
+                plannedDate: today,
+            },
 
-    const values = {
-        TODAY_WORK: {
-            area: 'WORK' as const,
-            status: 'TODAY' as const,
-            plannedDate: today,
-        },
+            WORK: {
+                area: 'WORK' as const,
+                status: 'BACKLOG' as const,
+                plannedDate: null,
+            },
 
-        TODAY_STUDIES: {
-            area: 'STUDIES' as const,
-            status: 'TODAY' as const,
-            plannedDate: today,
-        },
+            STUDIES: {
+                area: 'STUDIES' as const,
+                status: 'BACKLOG' as const,
+                plannedDate: null,
+            },
 
-        TODAY_PERSONAL: {
-            area: 'PERSONAL' as const,
-            status: 'TODAY' as const,
-            plannedDate: today,
-        },
+            PERSONAL: {
+                area: 'PERSONAL' as const,
+                status: 'BACKLOG' as const,
+                plannedDate: null,
+            },
+        }
 
-        WORK: {
-            area: 'WORK' as const,
-            status: 'BACKLOG' as const,
-            plannedDate: null,
-        },
-
-        STUDIES: {
-            area: 'STUDIES' as const,
-            status: 'BACKLOG' as const,
-            plannedDate: null,
-        },
-
-        PERSONAL: {
-            area: 'PERSONAL' as const,
-            status: 'BACKLOG' as const,
-            plannedDate: null,
-        },
-    }
-
-    await db
-        .update(task)
-        .set(values[destination])
-        .where(
-            and(
-                eq(task.id, taskId),
-                eq(task.userId, session.user.id),
-                eq(task.area, 'INBOX')
+        await db
+            .update(task)
+            .set(values[parsedInput.destination])
+            .where(
+                and(
+                    eq(task.id, parsedInput.taskId),
+                    eq(task.userId, ctx.user.id),
+                    eq(task.area, 'INBOX')
+                )
             )
-        )
 
-    revalidatePath('/inbox')
-    revalidatePath('/hoje')
-    revalidatePath('/semana')
-}
+        revalidatePath('/inbox')
+        revalidatePath('/hoje')
+        revalidatePath('/semana')
+    })

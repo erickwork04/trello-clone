@@ -89,7 +89,16 @@ export default async function InboxPage() {
         tagsByTask.set(row.taskId, current);
     }
 
-    const total = inboxTasks.length;
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const capturedToday = inboxTasks.filter(
+        (item) => item.createdAt >= startOfToday
+    ).length;
+
+    const pendingToOrganize = inboxTasks.filter(
+        (item) => item.inboxStage !== "ORGANIZED"
+    ).length;
 
     return (
         <div className="h-full overflow-y-auto bg-[#fbfcff]">
@@ -128,7 +137,7 @@ export default async function InboxPage() {
                         <InboxStatCard
                             icon={<Inbox className="size-5 text-blue-600" />}
                             title="Capturadas hoje"
-                            value={total}
+                            value={capturedToday}
                             description="novos itens"
                         />
 
@@ -144,7 +153,7 @@ export default async function InboxPage() {
                         <InboxStatCard
                             icon={<AlertCircle className="size-5 text-rose-500" />}
                             title="Pendentes de organizar"
-                            value={total}
+                            value={pendingToOrganize}
                             description="aguardando revisão"
                         />
                     </div>

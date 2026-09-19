@@ -26,10 +26,10 @@ export function FocusTaskCheckbox({
             // Se estiver contando foco,
             // encerra a sessão primeiro.
             if (activeSessionId) {
-                await finishFocus(activeSessionId)
+                await finishFocus({ sessionId: activeSessionId })
             }
 
-            await completeTask(taskId, false)
+            await completeTask({ taskId, completed: false })
         })
     }
 

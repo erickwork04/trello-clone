@@ -3,7 +3,8 @@
 import { useState, useTransition } from "react";
 import { Loader2, MoreVertical, Pencil, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { deleteInboxTask } from "@/app/(dashboard)/inbox/actions";
+import { toast } from "sonner";
+import { deleteInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud";
 import { EditInboxTaskModal } from "@/components/dashboard/edit-inbox-task-modal";
 
 interface TagOption { id: string; name: string; color: string; }
@@ -21,7 +22,13 @@ export function InboxTaskMenu({ task, availableTags }: Props) {
 
     function handleDelete() {
         startTransition(async () => {
-            await deleteInboxTask(task.id);
+            const result = await deleteInboxTask({ taskId: task.id });
+
+            if (result?.serverError) {
+                toast.error(result.serverError);
+                return;
+            }
+
             setDeleteOpen(false);
             setMenuOpen(false);
             router.refresh();

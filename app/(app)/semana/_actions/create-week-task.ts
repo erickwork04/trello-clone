@@ -1,53 +1,37 @@
 'use server'
 
-import { headers } from 'next/headers'
 import { revalidatePath } from 'next/cache'
 
-import { auth } from '@/lib/auth'
 import { db } from '@/db'
 import { task } from '@/db/schema/task'
+import { authActionClient } from '@/lib/safe-action'
+import { createWeekTaskSchema } from '@/lib/validators/week'
 
-interface CreateWeekTaskInput {
-    title: string
+export const createWeekTask = authActionClient
+    .inputSchema(createWeekTaskSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const [year, month, day] = parsedInput.plannedDate
+            .split('-')
+            .map(Number)
 
-    area: 'WORK' | 'STUDIES' | 'PERSONAL'
+        const plannedDate = new Date(year, month - 1, day)
 
-    plannedDate: string
-}
+        plannedDate.setHours(0, 0, 0, 0)
 
-export async function createWeekTask(input: CreateWeekTaskInput) {
-    const session = await auth.api.getSession({
-        headers: await headers(),
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+
+        const isToday = plannedDate.getTime() === today.getTime()
+
+        await db.insert(task).values({
+            userId: ctx.user.id,
+            title: parsedInput.title,
+            area: parsedInput.area,
+            priority: 'MEDIUM',
+            status: isToday ? 'TODAY' : 'WEEK',
+            plannedDate,
+        })
+
+        revalidatePath('/semana')
+        revalidatePath('/hoje')
     })
-
-    if (!session) {
-        throw new Error('Não autorizado')
-    }
-
-    if (!input.title.trim()) {
-        throw new Error('O título da tarefa é obrigatório')
-    }
-
-    const [year, month, day] = input.plannedDate.split('-').map(Number)
-
-    const plannedDate = new Date(year, month - 1, day)
-
-    plannedDate.setHours(0, 0, 0, 0)
-
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
-    const isToday = plannedDate.getTime() === today.getTime()
-
-    await db.insert(task).values({
-        userId: session.user.id,
-        title: input.title.trim(),
-        area: input.area,
-        priority: 'MEDIUM',
-        status: isToday ? 'TODAY' : 'WEEK',
-        plannedDate,
-    })
-
-    revalidatePath('/semana')
-    revalidatePath('/hoje')
-}

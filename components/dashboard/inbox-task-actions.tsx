@@ -1,6 +1,7 @@
 'use client'
 
 import { useTransition } from 'react'
+import { toast } from 'sonner'
 
 import { organizeInboxTask } from '@/app/(app)/inbox/_actions/organize-inbox-task'
 import { Button } from '@/components/ui/button'
@@ -24,7 +25,11 @@ export function InboxTaskActions({
             | 'PERSONAL'
     ) {
         startTransition(async () => {
-            await organizeInboxTask(taskId, destination)
+            const result = await organizeInboxTask({ taskId, destination })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+            }
         })
     }
 

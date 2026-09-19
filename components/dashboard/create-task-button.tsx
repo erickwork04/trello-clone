@@ -2,6 +2,8 @@
 
 import { useState } from 'react'
 
+import { toast } from 'sonner'
+
 import { createTask } from '@/app/(app)/hoje/_actions/create-task'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,28 +71,27 @@ export function CreateTaskButton() {
         try {
             setIsSubmitting(true)
 
-            await createTask({
-                title,
-                description,
-                destination,
+            const result =
+                destination === 'TODAY'
+                    ? await createTask({
+                        destination: 'TODAY',
+                        title,
+                        description,
+                        area,
+                        priority,
+                        plannedDate,
+                        plannedTime,
+                    })
+                    : await createTask({
+                        destination: 'INBOX',
+                        title,
+                        description,
+                    })
 
-                area: destination === 'TODAY' ? area : undefined,
-
-                priority:
-                    destination === 'TODAY'
-                        ? priority
-                        : undefined,
-
-                plannedDate:
-                    destination === 'TODAY'
-                        ? plannedDate
-                        : undefined,
-
-                plannedTime:
-                    destination === 'TODAY'
-                        ? plannedTime
-                        : undefined,
-            })
+            if (result?.serverError) {
+                toast.error(result.serverError)
+                return
+            }
 
             setTitle('')
             setArea('WORK')

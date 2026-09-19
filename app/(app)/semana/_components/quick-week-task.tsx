@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { Plus, X } from 'lucide-react'
+import { toast } from 'sonner'
 
 import { createWeekTask } from '../_actions/create-week-task'
 
@@ -26,11 +27,16 @@ export function QuickWeekTask({
         }
 
         startTransition(async () => {
-            await createWeekTask({
+            const result = await createWeekTask({
                 title,
                 area,
                 plannedDate,
             })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+                return
+            }
 
             setTitle('')
             setArea('WORK')

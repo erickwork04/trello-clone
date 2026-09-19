@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from 'react'
 import { MoreVertical, Pencil, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
 
 import {
     Popover,
@@ -45,12 +46,17 @@ export function TaskActions({
         if (!editTitle.trim()) return
 
         startTransition(async () => {
-            await updateTask({
+            const result = await updateTask({
                 taskId,
                 title: editTitle,
                 description: editDescription,
                 plannedTime: editTime,
             })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+                return
+            }
 
             setOpen(false)
             reset()
@@ -59,7 +65,12 @@ export function TaskActions({
 
     function handleDelete() {
         startTransition(async () => {
-            await deleteTask(taskId)
+            const result = await deleteTask({ taskId })
+
+            if (result?.serverError) {
+                toast.error(result.serverError)
+                return
+            }
 
             setOpen(false)
             reset()
