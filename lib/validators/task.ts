@@ -32,6 +32,8 @@ export const createTaskSchema = z.discriminatedUnion('destination', [
         priority: taskPrioritySchema,
         plannedDate: z.string().min(1, 'Selecione uma data.'),
         plannedTime: z.string().optional(),
+        estimatedMinutes: z.number().int().positive().optional(),
+        tagIds: z.array(z.string()).optional(),
     }),
 ])
 
