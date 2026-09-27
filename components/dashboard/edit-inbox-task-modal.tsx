@@ -1,10 +1,18 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { Loader2, X } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { updateInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud";
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+} from "@/components/ui/dialog";
 
 interface TagOption { id: string; name: string; color: string; }
 interface Props {
@@ -24,7 +32,6 @@ export function EditInboxTaskModal({ open, onClose, task, availableTags }: Props
     const router = useRouter();
 
     const selectedTags = useMemo(() => availableTags.filter((item) => selectedTagIds.includes(item.id)), [availableTags, selectedTagIds]);
-    if (!open) return null;
 
     function toggleTag(tagId: string) {
         setSelectedTagIds((current) => current.includes(tagId) ? current.filter((id) => id !== tagId) : [...current, tagId]);
@@ -48,37 +55,34 @@ export function EditInboxTaskModal({ open, onClose, task, availableTags }: Props
     }
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-            <div className="w-full max-w-xl rounded-2xl bg-white shadow-xl">
-                <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
-                    <div>
-                        <h2 className="text-xl font-semibold text-slate-900">Editar tarefa</h2>
-                        <p className="mt-1 text-sm text-slate-500">Atualize as informações da sua captura.</p>
-                    </div>
-                    <button type="button" onClick={onClose} className="flex size-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100"><X className="size-5" /></button>
-                </div>
+        <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+            <DialogContent className="max-w-xl">
+                <DialogHeader>
+                    <DialogTitle>Editar tarefa</DialogTitle>
+                    <DialogDescription>Atualize as informações da sua captura.</DialogDescription>
+                </DialogHeader>
 
-                <form onSubmit={handleSubmit} className="space-y-5 p-6">
+                <form onSubmit={handleSubmit} className="flex flex-col gap-5">
                     <div>
                         <label className="mb-2 block text-sm font-medium text-slate-700">Tarefa</label>
-                        <input value={title} onChange={(e) => setTitle(e.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                        <input value={title} onChange={(e) => setTitle(e.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-base outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm" />
                     </div>
 
                     <div>
                         <label className="mb-2 block text-sm font-medium text-slate-700">Descrição</label>
-                        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="w-full resize-none rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
+                        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="w-full resize-none rounded-xl border border-slate-200 px-3 py-3 text-base outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm" />
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
                         <div>
                             <label className="mb-2 block text-sm font-medium text-slate-700">Prioridade</label>
-                            <select value={priority} onChange={(e) => setPriority(e.target.value as "LOW" | "MEDIUM" | "HIGH")} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none">
+                            <select value={priority} onChange={(e) => setPriority(e.target.value as "LOW" | "MEDIUM" | "HIGH")} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base text-slate-700 outline-none sm:text-sm">
                                 <option value="LOW">Baixa</option><option value="MEDIUM">Média</option><option value="HIGH">Alta</option>
                             </select>
                         </div>
                         <div>
                             <label className="mb-2 block text-sm font-medium text-slate-700">Data</label>
-                            <input type="date" value={plannedDate} onChange={(e) => setPlannedDate(e.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm text-slate-700 outline-none" />
+                            <input type="date" value={plannedDate} onChange={(e) => setPlannedDate(e.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-base text-slate-700 outline-none sm:text-sm" />
                         </div>
                     </div>
 
@@ -96,12 +100,12 @@ export function EditInboxTaskModal({ open, onClose, task, availableTags }: Props
                         {selectedTags.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{selectedTags.map((item) => <span key={item.id} className="rounded-md px-2.5 py-1 text-xs font-medium text-white" style={{ backgroundColor: item.color }}>{item.name}</span>)}</div>}
                     </div>
 
-                    <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
+                    <DialogFooter>
                         <button type="button" onClick={onClose} disabled={isPending} className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancelar</button>
-                        <button type="submit" disabled={isPending || !title.trim()} className="flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{isPending && <Loader2 className="size-4 animate-spin" />}Salvar alterações</button>
-                    </div>
+                        <button type="submit" disabled={isPending || !title.trim()} className="flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{isPending && <Loader2 className="size-4 animate-spin" />}Salvar alterações</button>
+                    </DialogFooter>
                 </form>
-            </div>
-        </div>
+            </DialogContent>
+        </Dialog>
     );
 }

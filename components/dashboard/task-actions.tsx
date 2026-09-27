@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useTransition } from 'react'
-import { MoreVertical, Pencil, Trash2 } from 'lucide-react'
+import { MoreVertical, Pencil, Target, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import {
@@ -18,6 +18,12 @@ interface TaskActionsProps {
     title: string
     description?: string | null
     time?: string | null
+    /**
+     * Só passado por quem usa esse menu no contexto de "Hoje" (onde
+     * o conceito de foco existe). Quando ausente, nenhum item novo
+     * aparece — Estudos/Pessoal continuam exatamente como antes.
+     */
+    onSetFocus?: () => void
 }
 
 export function TaskActions({
@@ -25,6 +31,7 @@ export function TaskActions({
     title,
     description,
     time,
+    onSetFocus,
 }: TaskActionsProps) {
     const [open, setOpen] = useState(false)
     const [mode, setMode] = useState<'menu' | 'edit' | 'delete'>('menu')
@@ -118,6 +125,20 @@ export function TaskActions({
                             <Pencil className="size-4" />
                             Editar
                         </button>
+
+                        {onSetFocus && (
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    onSetFocus()
+                                    setOpen(false)
+                                }}
+                                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-slate-100"
+                            >
+                                <Target className="size-4" />
+                                Definir como foco
+                            </button>
+                        )}
 
                         <button
                             type="button"

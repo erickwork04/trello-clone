@@ -13,7 +13,7 @@ export default function SignUpPage() {
           </h1>
 
           <p className="text-sm leading-6 text-muted-foreground">
-            O Meu Board ainda não está liberado para novos usuários.
+            O Connect Board ainda não está liberado para novos usuários.
             Estamos preparando tudo para abrir os cadastros em breve.
           </p>
         </div>

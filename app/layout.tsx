@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: 'Meu Board',
-    template: '%s | Meu Board',
+    default: 'Connect Board',
+    template: '%s | Connect Board',
   },
 
   description:
@@ -27,11 +27,11 @@ export const metadata: Metadata = {
   ),
 
   openGraph: {
-    title: 'Meu Board',
+    title: 'Connect Board',
     description:
       'Organize suas tarefas, prioridades, estudos, trabalho e rotina em um só lugar.',
     url: 'https://trello.connectcode.site',
-    siteName: 'Meu Board',
+    siteName: 'Connect Board',
     type: 'website',
     locale: 'pt_BR',
 
@@ -40,14 +40,14 @@ export const metadata: Metadata = {
         url: '/og-image.png',
         width: 1200,
         height: 630,
-        alt: 'Meu Board',
+        alt: 'Connect Board',
       },
     ],
   },
 
   twitter: {
     card: 'summary_large_image',
-    title: 'Meu Board',
+    title: 'Connect Board',
     description:
       'Organize suas tarefas, prioridades, estudos, trabalho e rotina em um só lugar.',
     images: ['/og-image.png'],

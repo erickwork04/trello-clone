@@ -10,10 +10,11 @@ import {
     GraduationCap,
     UserRound,
     CircleCheckBig,
-    Tags
+    Tags,
+    Settings
 } from 'lucide-react'
 
-const items = [
+export const items = [
     {
         label: 'Hoje',
         href: '/hoje',
@@ -71,7 +72,7 @@ export function AppSidebar() {
                     </div>
 
                     <span className="font-semibold tracking-tight text-foreground">
-                        Meu Board
+                        Connect Board
                     </span>
                 </div>
             </div>
@@ -103,7 +104,25 @@ export function AppSidebar() {
                 })}
             </nav>
 
-            <div className="p-4">
+            <div className="space-y-1 p-4">
+                <div className="mb-1 h-px bg-border" />
+
+                <Link
+                    href="/configuracoes"
+                    className={[
+                        'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors',
+                        pathname === '/configuracoes' ||
+                            pathname.startsWith('/configuracoes')
+                            ? 'bg-blue-50 font-medium text-blue-600'
+                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                    ].join(' ')}
+                >
+                    <Settings className="size-4" />
+                    <span>Configurações</span>
+                </Link>
+            </div>
+
+            <div className="p-4 pt-0">
                 <div className="rounded-xl bg-blue-50 p-4">
                     <p className="text-xs leading-5 text-blue-700">
                         Pequenos passos também são progresso.

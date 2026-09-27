@@ -9,10 +9,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-    Popover,
-    PopoverContent,
-    PopoverTrigger,
-} from '@/components/ui/popover'
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+} from '@/components/ui/dialog'
 
 type Area = 'WORK' | 'STUDIES' | 'PERSONAL'
 type Priority = 'LOW' | 'MEDIUM' | 'HIGH'
@@ -107,30 +110,24 @@ export function CreateTaskButton() {
     }
 
     return (
-        <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-                <Button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700">
-                    + Nova tarefa
-                </Button>
-            </PopoverTrigger>
-
-            <PopoverContent
-                align="end"
-                side="left"
-                sideOffset={12}
-                collisionPadding={16}
-                className="max-h-[70vh] w-105 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
+        <>
+            <Button
+                onClick={() => setOpen(true)}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
             >
-                <div className="space-y-4">
-                    <div>
-                        <h3 className="text-base font-semibold text-slate-900">
-                            Nova tarefa
-                        </h3>
+                + Nova tarefa
+            </Button>
 
-                        <p className="mt-1 text-xs text-slate-500">
+            <Dialog open={open} onOpenChange={setOpen}>
+                <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                        <DialogTitle>Nova tarefa</DialogTitle>
+                        <DialogDescription>
                             Adicione uma tarefa rapidamente.
-                        </p>
-                    </div>
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4">
 
                     {/* Tarefa */}
                     <div className="space-y-2">
@@ -410,24 +407,36 @@ export function CreateTaskButton() {
                         </>
                     )}
 
-                    <Button
-                        className="w-full rounded-lg bg-blue-600 text-white transition hover:bg-blue-700"
-                        disabled={
-                            isSubmitting ||
-                            !title.trim() ||
-                            (
-                                destination === 'TODAY' &&
-                                !plannedDate
-                            )
-                        }
-                        onClick={handleSubmit}
-                    >
-                        {isSubmitting
-                            ? 'Adicionando...'
-                            : 'Adicionar tarefa'}
-                    </Button>
-                </div>
-            </PopoverContent>
-        </Popover>
+                    </div>
+
+                    <DialogFooter>
+                        <Button
+                            variant="outline"
+                            onClick={() => setOpen(false)}
+                            disabled={isSubmitting}
+                        >
+                            Cancelar
+                        </Button>
+
+                        <Button
+                            className="bg-blue-600 text-white transition hover:bg-blue-700"
+                            disabled={
+                                isSubmitting ||
+                                !title.trim() ||
+                                (
+                                    destination === 'TODAY' &&
+                                    !plannedDate
+                                )
+                            }
+                            onClick={handleSubmit}
+                        >
+                            {isSubmitting
+                                ? 'Adicionando...'
+                                : 'Adicionar tarefa'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        </>
     )
 }

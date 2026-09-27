@@ -80,13 +80,33 @@ const SheetHeader = ({
 }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "flex flex-col gap-1.5 border-b border-slate-100 px-5 py-4",
+      "flex shrink-0 flex-col gap-1.5 border-b border-slate-100 px-5 py-4",
       className
     )}
     {...props}
   />
 )
 SheetHeader.displayName = "SheetHeader"
+
+/**
+ * Opcional — nem todo Sheet precisa de footer (o painel de detalhes
+ * do card, por exemplo, é autosave e não tem). Use quando o
+ * conteúdo for um formulário com botões de ação (Salvar/Cancelar/
+ * Avançar): eles ficam sempre visíveis, mesmo com teclado aberto.
+ */
+const SheetFooter = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
+  <div
+    className={cn(
+      "flex shrink-0 flex-col-reverse gap-2 border-t border-slate-100 bg-white px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 sm:flex-row sm:justify-end",
+      className
+    )}
+    {...props}
+  />
+)
+SheetFooter.displayName = "SheetFooter"
 
 const SheetTitle = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Title>,
@@ -123,6 +143,7 @@ export {
   SheetClose,
   SheetContent,
   SheetHeader,
+  SheetFooter,
   SheetTitle,
   SheetDescription,
 }

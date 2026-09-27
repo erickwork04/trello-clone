@@ -33,7 +33,7 @@ export default async function BoardPage() {
             .insert(board)
             .values({
                 userId: session.user.id,
-                title: 'Meu Board',
+                title: 'Connect Board',
             })
             .onConflictDoNothing({
                 target: board.userId,

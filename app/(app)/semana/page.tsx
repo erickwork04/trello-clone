@@ -160,7 +160,7 @@ export default async function SemanaPage({
             : Math.round((completedCount / totalCount) * 100);
 
     return (
-        <div className="h-full overflow-y-auto bg-[#f8fbff]">
+        <div className="h-full overflow-x-hidden overflow-y-auto bg-[#f8fbff]">
             <div className="mx-auto w-full max-w-[1800px] px-6 py-6 2xl:px-8">
                 {/* HEADER */}
                 <div className="mb-6 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
@@ -276,8 +276,12 @@ export default async function SemanaPage({
                 </div>
 
                 {/* DIAS DA SEMANA */}
-                <div className="overflow-x-auto pb-2">
-                    <div className="grid min-w-325 grid-cols-7 gap-2">
+                <div className="relative">
+                    {/* Indicador sutil de que há mais conteúdo pro lado — só no mobile */}
+                    <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-[#f8fbff] to-transparent" />
+                    <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-[#f8fbff] to-transparent" />
+
+                    <div className="flex gap-2 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch]">
                         {days.map((day) => {
                             const dayKey = getDateKey(day);
 
@@ -309,7 +313,7 @@ export default async function SemanaPage({
                                 <section
                                     key={day.toISOString()}
                                     className={[
-                                        "flex min-h-100 flex-col rounded-xl border bg-white px-4 py-4 shadow-sm transition",
+                                        "flex min-h-100 min-w-65 max-w-95 flex-1 shrink-0 flex-col rounded-xl border bg-white px-4 py-4 shadow-sm transition",
                                         isToday
                                             ? "border-blue-400 bg-blue-50/30 ring-1 ring-blue-200"
                                             : "border-slate-200",

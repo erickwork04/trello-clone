@@ -39,7 +39,18 @@ export const startFocus = authActionClient
                 .limit(1)
 
             if (activeSession.length > 0) {
-                return activeSession[0]
+                // Já em foco nesta mesma tarefa: idempotente, retorna
+                // a sessão existente.
+                if (activeSession[0].taskId === parsedInput.taskId) {
+                    return activeSession[0]
+                }
+
+                // Sessão ativa em OUTRA tarefa: nunca trocar
+                // silenciosamente (antes isso retornava a sessão
+                // errada como se tivesse iniciado a nova tarefa).
+                throw new Error(
+                    'Já existe uma sessão de foco ativa em outra tarefa. Finalize-a antes de iniciar uma nova.'
+                )
             }
 
             const [inserted] = await tx

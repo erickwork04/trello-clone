@@ -6,6 +6,16 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { deleteInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud";
 import { EditInboxTaskModal } from "@/components/dashboard/edit-inbox-task-modal";
+import {
+    AlertDialog,
+    AlertDialogContent,
+    AlertDialogHeader,
+    AlertDialogTitle,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogCancel,
+    AlertDialogAction,
+} from "@/components/ui/alert-dialog";
 
 interface TagOption { id: string; name: string; color: string; }
 interface Props {
@@ -49,18 +59,26 @@ export function InboxTaskMenu({ task, availableTags }: Props) {
 
             <EditInboxTaskModal open={editOpen} onClose={() => setEditOpen(false)} task={task} availableTags={availableTags} />
 
-            {deleteOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
-                    <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
-                        <h2 className="text-lg font-semibold text-slate-900">Excluir tarefa?</h2>
-                        <p className="mt-2 text-sm leading-6 text-slate-500">A tarefa <strong>{task.title}</strong> será excluída.</p>
-                        <div className="mt-6 flex justify-end gap-3">
-                            <button type="button" onClick={() => setDeleteOpen(false)} disabled={isPending} className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancelar</button>
-                            <button type="button" onClick={handleDelete} disabled={isPending} className="flex h-10 items-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50">{isPending && <Loader2 className="size-4 animate-spin" />}Excluir</button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+                <AlertDialogContent className="max-w-sm">
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Excluir tarefa?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            A tarefa <strong>{task.title}</strong> será excluída.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={isPending}>Cancelar</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleDelete}
+                            disabled={isPending}
+                            className="bg-rose-600 text-white hover:bg-rose-700"
+                        >
+                            {isPending && <Loader2 className="mr-2 size-4 animate-spin" />}Excluir
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </>
     );
 }

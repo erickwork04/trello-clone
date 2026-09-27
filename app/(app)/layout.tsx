@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 
 import { auth } from '@/lib/auth'
 import { AppSidebar } from '@/components/layout/app-sidebar'
+import { MobileNav } from '@/components/layout/mobile-nav'
 import { LogoutButton } from '@/components/auth/logout-button'
 
 export default async function AppLayout({
@@ -23,7 +24,13 @@ export default async function AppLayout({
       <AppSidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center justify-end border-b border-border bg-card px-6">
+        {/* Mobile: header + drawer próprios (logo, nome, hambúrguer). */}
+        <div className="md:hidden">
+          <MobileNav userName={session.user.name} />
+        </div>
+
+        {/* Desktop: header atual, sem nenhuma alteração de comportamento. */}
+        <header className="hidden h-16 shrink-0 items-center justify-end border-b border-border bg-card px-6 md:flex">
           <LogoutButton />
         </header>
 

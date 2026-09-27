@@ -19,7 +19,11 @@ import { LastFocusStat } from '@/components/dashboard/last-focus-stat'
 import { getTodayData } from './_queries/get-today-data'
 import { getFocusData } from './_queries/get-focus-data'
 
-export default async function HojePage() {
+export default async function HojePage({
+    searchParams,
+}: {
+    searchParams: Promise<{ focus?: string }>
+}) {
     const session = await auth.api.getSession({
         headers: await headers(),
     })
@@ -27,6 +31,8 @@ export default async function HojePage() {
     if (!session) {
         return null
     }
+
+    const { focus: focusTaskId } = await searchParams
 
     const {
         todayTasks,
@@ -62,10 +68,14 @@ export default async function HojePage() {
         INBOX: 'Pessoal',
     } as const
 
+    // Foco de hoje NUNCA é escolhido automaticamente — só a tarefa
+    // que o usuário explicitamente selecionou via "Definir como
+    // foco" (?focus=<id> na URL, sobrevive a refresh). Prioridade
+    // (isTopPriority) é um conceito diferente e não decide o foco.
     const focusTask =
-        topPriorities[0] ??
-        todayTasks[0] ??
-        null
+        todayTasks.find(
+            (item) => item.id === focusTaskId
+        ) ?? null
 
     function getGreeting() {
         const hour = Number(
@@ -177,7 +187,9 @@ export default async function HojePage() {
                                         : undefined
                                 }
                                 activeSession={
-                                    focusData.activeSession
+                                    focusData.activeSession &&
+                                        focusData.activeSession.taskId ===
+                                        focusTask.id
                                         ? {
                                             id:
                                                 focusData
@@ -204,9 +216,16 @@ export default async function HojePage() {
                                 }
                             />
                         ) : (
-                            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
-                                Nenhuma tarefa para
-                                focar hoje.
+                            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center">
+                                <p className="text-sm font-medium text-slate-600">
+                                    Nenhuma tarefa em foco agora.
+                                </p>
+                                <p className="mt-1 text-sm text-slate-400">
+                                    Escolha uma tarefa de hoje para
+                                    começar — use o menu &ldquo;...&rdquo;
+                                    em qualquer tarefa abaixo e toque
+                                    em &ldquo;Definir como foco&rdquo;.
+                                </p>
                             </div>
                         )}
 
@@ -257,6 +276,20 @@ export default async function HojePage() {
                                                 allowPriority={
                                                     task.status !==
                                                     'DONE'
+                                                }
+                                                allowFocus={
+                                                    task.status !==
+                                                    'DONE'
+                                                }
+                                                isFocusTask={
+                                                    task.id ===
+                                                    (focusTask?.id ?? '')
+                                                }
+                                                activeSessionTaskId={
+                                                    focusData
+                                                        .activeSession
+                                                        ?.taskId ??
+                                                    null
                                                 }
                                             />
                                         )
@@ -320,6 +353,20 @@ export default async function HojePage() {
                                                 allowPriority={
                                                     task.status !==
                                                     'DONE'
+                                                }
+                                                allowFocus={
+                                                    task.status !==
+                                                    'DONE'
+                                                }
+                                                isFocusTask={
+                                                    task.id ===
+                                                    (focusTask?.id ?? '')
+                                                }
+                                                activeSessionTaskId={
+                                                    focusData
+                                                        .activeSession
+                                                        ?.taskId ??
+                                                    null
                                                 }
                                             />
                                         )

@@ -1,7 +1,8 @@
 'use client'
 
 import { useTransition } from 'react'
-import { Clock3, MoreVertical, Star } from 'lucide-react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+import { Clock3, Star } from 'lucide-react'
 import { toast } from 'sonner'
 import { completeTask } from '@/app/(app)/hoje/_actions/complete-task'
 import { AreaBadge } from './area-badge'
@@ -17,6 +18,21 @@ interface TaskRowProps {
     completed?: boolean
     topPriority?: boolean
     allowPriority?: boolean
+    /**
+     * Mostra "Definir como foco" no menu "...". Só faz sentido na
+     * página Hoje — os demais usos de TaskRow simplesmente não
+     * passam essa prop.
+     */
+    allowFocus?: boolean
+    /** Esta é a tarefa atualmente selecionada como foco (?focus=id). */
+    isFocusTask?: boolean
+    /**
+     * Id da tarefa com sessão de foco ativa (rodando ou pausada),
+     * se houver — independente de qual tarefa está selecionada.
+     * Usado só pra bloquear troca de seleção com sessão ativa em
+     * outra tarefa.
+     */
+    activeSessionTaskId?: string | null
 }
 
 export function TaskRow({
@@ -27,9 +43,37 @@ export function TaskRow({
     time,
     completed = false,
     topPriority = false,
-    allowPriority = false
+    allowPriority = false,
+    allowFocus = false,
+    isFocusTask = false,
+    activeSessionTaskId = null,
 }: TaskRowProps) {
     const [isPending, startTransition] = useTransition()
+    const router = useRouter()
+    const pathname = usePathname()
+    const searchParams = useSearchParams()
+
+    function handleSetFocus() {
+        if (activeSessionTaskId && activeSessionTaskId !== id) {
+            toast.error(
+                'Já existe uma sessão de foco ativa em outra tarefa. Finalize-a antes de escolher outra.'
+            )
+            return
+        }
+
+        const params = new URLSearchParams(searchParams.toString())
+        params.set('focus', id)
+        router.replace(`${pathname}?${params.toString()}`, { scroll: false })
+    }
+
+    function clearFocusSelection() {
+        const params = new URLSearchParams(searchParams.toString())
+        params.delete('focus')
+        const query = params.toString()
+        router.replace(query ? `${pathname}?${query}` : pathname, {
+            scroll: false,
+        })
+    }
 
     function handlePriority() {
         if (isPending) {
@@ -61,6 +105,15 @@ export function TaskRow({
 
             if (result?.serverError) {
                 toast.error(result.serverError)
+                return
+            }
+
+            // Concluir a tarefa que estava em foco limpa a seleção
+            // (?focus=) — completeTask já finaliza a sessão ativa
+            // dela no servidor; aqui só tiramos o parâmetro da URL,
+            // já que isso é estado do navegador, não do banco.
+            if (!completed && isFocusTask) {
+                clearFocusSelection()
             }
         })
     }
@@ -137,6 +190,11 @@ export function TaskRow({
                 title={title}
                 description={description}
                 time={time}
+                onSetFocus={
+                    allowFocus && !completed
+                        ? handleSetFocus
+                        : undefined
+                }
             />
         </div>
     )

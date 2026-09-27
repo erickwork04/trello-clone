@@ -234,8 +234,10 @@ export function FocusTimer({
                         <Play className="size-4 fill-current" />
 
                         {isPending
-                            ? 'Continuando...'
-                            : 'Continuar'}
+                            ? 'Iniciando...'
+                            : accumulatedSeconds === 0
+                                ? 'Iniciar foco'
+                                : 'Continuar'}
                     </button>
                 ) : (
                     <button
