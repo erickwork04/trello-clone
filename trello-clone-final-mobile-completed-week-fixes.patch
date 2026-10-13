@@ -1,0 +1,532 @@
+diff --git a/app/(app)/concluidas/page.tsx b/app/(app)/concluidas/page.tsx
+new file mode 100644
+index 0000000..6845f8a
+--- /dev/null
++++ b/app/(app)/concluidas/page.tsx
+@@ -0,0 +1,108 @@
++import { headers } from 'next/headers'
++import { and, desc, eq, inArray, sql } from 'drizzle-orm'
++import { CircleCheckBig } from 'lucide-react'
++
++import { auth } from '@/lib/auth'
++import { db } from '@/db'
++import { task } from '@/db/schema/task'
++import { taskTag } from '@/db/schema/task-tag'
++import { tag } from '@/db/schema/tag'
++import { ConcludedView } from '@/components/concluded/concluded-view'
++import type { ConcludedTask } from '@/components/concluded/concluded-task-card'
++
++const AREA_MAP = {
++    WORK: 'Trabalho',
++    STUDIES: 'Estudos',
++    PERSONAL: 'Pessoal',
++    INBOX: 'Pessoal',
++} as const
++
++export default async function ConcluidasPage() {
++    const session = await auth.api.getSession({
++        headers: await headers(),
++    })
++
++    if (!session) {
++        return null
++    }
++
++    const tasks = await db
++        .select()
++        .from(task)
++        .where(
++            and(
++                eq(task.userId, session.user.id),
++                eq(task.status, 'DONE')
++            )
++        )
++        // Mais recentemente concluídas primeiro. completedAt pode ser
++        // nulo (tarefa marcada DONE sem essa data registrada) — essas
++        // ficam por último, não inventamos uma data pra elas.
++        .orderBy(
++            sql`${task.completedAt} DESC NULLS LAST`,
++            desc(task.updatedAt)
++        )
++
++    const taskIds = tasks.map((t) => t.id)
++
++    const [taskTagRows] = await Promise.all([
++        taskIds.length > 0
++            ? db
++                .select({
++                    taskId: taskTag.taskId,
++                    id: tag.id,
++                    name: tag.name,
++                    color: tag.color,
++                })
++                .from(taskTag)
++                .innerJoin(tag, eq(taskTag.tagId, tag.id))
++                .where(inArray(taskTag.taskId, taskIds))
++            : Promise.resolve([]),
++    ])
++
++    const tagsByTaskId = new Map<
++        string,
++        Array<{ id: string; name: string; color: string }>
++    >()
++
++    for (const row of taskTagRows) {
++        const current = tagsByTaskId.get(row.taskId) ?? []
++        current.push({ id: row.id, name: row.name, color: row.color })
++        tagsByTaskId.set(row.taskId, current)
++    }
++
++    const concludedTasks: ConcludedTask[] = tasks.map((t) => ({
++        id: t.id,
++        title: t.title,
++        description: t.description,
++        area: AREA_MAP[t.area],
++        priority: t.priority,
++        completedAt: t.completedAt,
++        tags: tagsByTaskId.get(t.id) ?? [],
++    }))
++
++    return (
++        <div className="h-full overflow-y-auto bg-[#fbfcff]">
++            <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6 sm:py-8">
++                <div className="flex items-center gap-3">
++                    <div className="flex size-10 items-center justify-center rounded-xl bg-blue-600 text-white">
++                        <CircleCheckBig className="size-5" />
++                    </div>
++
++                    <div>
++                        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
++                            Concluídas
++                        </h1>
++                        <p className="text-sm text-slate-500">
++                            Tarefas finalizadas recentemente.
++                        </p>
++                    </div>
++                </div>
++
++                <div className="mt-8">
++                    <ConcludedView tasks={concludedTasks} />
++                </div>
++            </div>
++        </div>
++    )
++}
+diff --git a/app/(app)/semana/page.tsx b/app/(app)/semana/page.tsx
+index 1b34ed7..36aaf0d 100644
+--- a/app/(app)/semana/page.tsx
++++ b/app/(app)/semana/page.tsx
+@@ -278,10 +278,10 @@ export default async function SemanaPage({
+                 {/* DIAS DA SEMANA */}
+                 <div className="relative">
+                     {/* Indicador sutil de que há mais conteúdo pro lado — só no mobile */}
+-                    <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-[#f8fbff] to-transparent md:hidden" />
+-                    <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-[#f8fbff] to-transparent md:hidden" />
++                    <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-[#f8fbff] to-transparent" />
++                    <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-[#f8fbff] to-transparent" />
+ 
+-                    <div className="flex gap-2 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch] md:grid md:grid-cols-7 md:overflow-visible">
++                    <div className="flex gap-2 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch]">
+                         {days.map((day) => {
+                             const dayKey = getDateKey(day);
+ 
+@@ -313,7 +313,7 @@ export default async function SemanaPage({
+                                 <section
+                                     key={day.toISOString()}
+                                     className={[
+-                                        "flex min-h-100 min-w-65 shrink-0 flex-col rounded-xl border bg-white px-4 py-4 shadow-sm transition md:min-w-0 md:shrink",
++                                        "flex min-h-100 min-w-65 max-w-95 flex-1 shrink-0 flex-col rounded-xl border bg-white px-4 py-4 shadow-sm transition",
+                                         isToday
+                                             ? "border-blue-400 bg-blue-50/30 ring-1 ring-blue-200"
+                                             : "border-slate-200",
+diff --git a/app/(app)/tags/page.tsx b/app/(app)/tags/page.tsx
+index 772037a..9c86ecd 100644
+--- a/app/(app)/tags/page.tsx
++++ b/app/(app)/tags/page.tsx
+@@ -94,7 +94,7 @@ export default async function TagsPage() {
+                             {tags.map((item) => (
+                                 <div
+                                     key={item.id}
+-                                    className="flex min-h-30flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-blue-200 hover:shadow-sm"
++                                    className="flex min-h-30 flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-blue-200 hover:shadow-sm"
+                                 >
+                                     <div className="flex items-start justify-between gap-3">
+                                         <div className="flex min-w-0 items-center gap-3">
+diff --git a/components/concluded/concluded-task-card.tsx b/components/concluded/concluded-task-card.tsx
+new file mode 100644
+index 0000000..b75eba7
+--- /dev/null
++++ b/components/concluded/concluded-task-card.tsx
+@@ -0,0 +1,111 @@
++'use client'
++
++import { useTransition } from 'react'
++import { RotateCcw } from 'lucide-react'
++import { toast } from 'sonner'
++
++import { completeTask } from '@/app/(app)/hoje/_actions/complete-task'
++import { AreaBadge } from '@/components/dashboard/area-badge'
++
++export interface ConcludedTask {
++    id: string
++    title: string
++    description: string | null
++    area: 'Trabalho' | 'Estudos' | 'Pessoal'
++    priority: 'LOW' | 'MEDIUM' | 'HIGH'
++    completedAt: Date | null
++    tags: Array<{ id: string; name: string; color: string }>
++}
++
++const PRIORITY_LABELS: Record<'LOW' | 'MEDIUM' | 'HIGH', string> = {
++    LOW: 'Baixa',
++    MEDIUM: 'Média',
++    HIGH: 'Alta',
++}
++
++export function ConcludedTaskCard({ task }: { task: ConcludedTask }) {
++    const [isPending, startTransition] = useTransition()
++
++    function handleReopen() {
++        if (isPending) return
++
++        startTransition(async () => {
++            // completeTask já lida com o toggle: como a tarefa está
++            // concluída, chamar com completed=true faz ela voltar
++            // pro status informado em returnStatus (default 'TODAY',
++            // mesmo comportamento já usado ao desconcluir em Hoje).
++            const result = await completeTask({
++                taskId: task.id,
++                completed: true,
++            })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++            }
++        })
++    }
++
++    return (
++        <div
++            className={`flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition sm:flex-row sm:items-start sm:justify-between ${
++                isPending ? 'opacity-50' : ''
++            }`}
++        >
++            <div className="min-w-0 flex-1">
++                <p className="truncate text-sm font-medium text-slate-500 line-through">
++                    {task.title}
++                </p>
++
++                <div className="mt-2 flex flex-wrap items-center gap-2">
++                    <AreaBadge area={task.area} />
++
++                    {task.priority === 'HIGH' && (
++                        <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-600">
++                            {PRIORITY_LABELS[task.priority]}
++                        </span>
++                    )}
++
++                    {task.tags.map((t) => (
++                        <span
++                            key={t.id}
++                            className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
++                            style={{
++                                backgroundColor: `${t.color}20`,
++                                color: t.color,
++                            }}
++                        >
++                            <span
++                                className="size-1.5 rounded-full"
++                                style={{ backgroundColor: t.color }}
++                            />
++                            {t.name}
++                        </span>
++                    ))}
++
++                    <span className="text-xs text-slate-400">
++                        {task.completedAt
++                            ? `Concluída em ${task.completedAt.toLocaleDateString(
++                                  'pt-BR',
++                                  {
++                                      day: '2-digit',
++                                      month: 'short',
++                                      year: 'numeric',
++                                  }
++                              )}`
++                            : 'Data de conclusão não registrada'}
++                    </span>
++                </div>
++            </div>
++
++            <button
++                type="button"
++                onClick={handleReopen}
++                disabled={isPending}
++                className="flex h-9 w-full shrink-0 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50 sm:w-auto"
++            >
++                <RotateCcw className="size-3.5" />
++                Reabrir
++            </button>
++        </div>
++    )
++}
+diff --git a/components/concluded/concluded-view.tsx b/components/concluded/concluded-view.tsx
+new file mode 100644
+index 0000000..31a81c0
+--- /dev/null
++++ b/components/concluded/concluded-view.tsx
+@@ -0,0 +1,116 @@
++'use client'
++
++import { useMemo, useState } from 'react'
++import { Search } from 'lucide-react'
++
++import { ConcludedTask, ConcludedTaskCard } from './concluded-task-card'
++
++interface ConcludedViewProps {
++    tasks: ConcludedTask[]
++}
++
++const AREA_OPTIONS: Array<{ value: ConcludedTask['area']; label: string }> = [
++    { value: 'Trabalho', label: 'Trabalho' },
++    { value: 'Estudos', label: 'Estudos' },
++    { value: 'Pessoal', label: 'Pessoal' },
++]
++
++export function ConcludedView({ tasks }: ConcludedViewProps) {
++    const [search, setSearch] = useState('')
++    const [areaFilter, setAreaFilter] = useState<ConcludedTask['area'] | null>(
++        null
++    )
++
++    const filteredTasks = useMemo(() => {
++        const term = search.trim().toLowerCase()
++
++        return tasks.filter((task) => {
++            if (areaFilter && task.area !== areaFilter) return false
++
++            if (term) {
++                const matchesTitle = task.title.toLowerCase().includes(term)
++                const matchesDescription = (task.description ?? '')
++                    .toLowerCase()
++                    .includes(term)
++                if (!matchesTitle && !matchesDescription) return false
++            }
++
++            return true
++        })
++    }, [tasks, search, areaFilter])
++
++    return (
++        <>
++            {/* CONTROLES */}
++            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
++                <div className="flex h-11 w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 sm:max-w-[280px]">
++                    <Search className="size-4 shrink-0 text-slate-400" />
++                    <input
++                        type="text"
++                        value={search}
++                        onChange={(e) => setSearch(e.target.value)}
++                        placeholder="Buscar nas concluídas..."
++                        className="h-full w-full bg-transparent text-base text-slate-700 outline-none placeholder:text-slate-400 sm:text-sm"
++                    />
++                </div>
++
++                <div className="flex flex-wrap gap-2">
++                    <button
++                        type="button"
++                        onClick={() => setAreaFilter(null)}
++                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
++                            areaFilter === null
++                                ? 'border-slate-900 bg-slate-900 text-white'
++                                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
++                        }`}
++                    >
++                        Todas
++                    </button>
++
++                    {AREA_OPTIONS.map((option) => (
++                        <button
++                            key={option.value}
++                            type="button"
++                            onClick={() =>
++                                setAreaFilter(
++                                    areaFilter === option.value
++                                        ? null
++                                        : option.value
++                                )
++                            }
++                            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
++                                areaFilter === option.value
++                                    ? 'border-slate-900 bg-slate-900 text-white'
++                                    : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
++                            }`}
++                        >
++                            {option.label}
++                        </button>
++                    ))}
++                </div>
++            </div>
++
++            {/* LISTA */}
++            {filteredTasks.length === 0 ? (
++                <div className="flex min-h-60 flex-col items-center justify-center rounded-2xl border border-dashed border-slate-200 bg-white px-6 text-center">
++                    <p className="text-sm font-medium text-slate-600">
++                        {tasks.length === 0
++                            ? 'Nenhuma tarefa concluída ainda.'
++                            : 'Nenhuma tarefa encontrada.'}
++                    </p>
++                    <p className="mt-1 text-sm text-slate-400">
++                        {tasks.length === 0
++                            ? 'Quando você concluir tarefas, elas aparecem aqui.'
++                            : 'Tente ajustar a busca ou o filtro.'}
++                    </p>
++                </div>
++            ) : (
++                <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
++                    {filteredTasks.map((task) => (
++                        <ConcludedTaskCard key={task.id} task={task} />
++                    ))}
++                </div>
++            )}
++        </>
++    )
++}
+diff --git a/components/dashboard/create-task-button.tsx b/components/dashboard/create-task-button.tsx
+index d1adc05..0eea03f 100644
+--- a/components/dashboard/create-task-button.tsx
++++ b/components/dashboard/create-task-button.tsx
+@@ -9,10 +9,13 @@ import { Button } from '@/components/ui/button'
+ import { Input } from '@/components/ui/input'
+ import { Label } from '@/components/ui/label'
+ import {
+-    Popover,
+-    PopoverContent,
+-    PopoverTrigger,
+-} from '@/components/ui/popover'
++    Dialog,
++    DialogContent,
++    DialogHeader,
++    DialogTitle,
++    DialogDescription,
++    DialogFooter,
++} from '@/components/ui/dialog'
+ 
+ type Area = 'WORK' | 'STUDIES' | 'PERSONAL'
+ type Priority = 'LOW' | 'MEDIUM' | 'HIGH'
+@@ -107,30 +110,24 @@ export function CreateTaskButton() {
+     }
+ 
+     return (
+-        <Popover open={open} onOpenChange={setOpen}>
+-            <PopoverTrigger asChild>
+-                <Button className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700">
+-                    + Nova tarefa
+-                </Button>
+-            </PopoverTrigger>
+-
+-            <PopoverContent
+-                align="end"
+-                side="left"
+-                sideOffset={12}
+-                collisionPadding={16}
+-                className="max-h-[70vh] w-105 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
++        <>
++            <Button
++                onClick={() => setOpen(true)}
++                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+             >
+-                <div className="space-y-4">
+-                    <div>
+-                        <h3 className="text-base font-semibold text-slate-900">
+-                            Nova tarefa
+-                        </h3>
+-
+-                        <p className="mt-1 text-xs text-slate-500">
++                + Nova tarefa
++            </Button>
++
++            <Dialog open={open} onOpenChange={setOpen}>
++                <DialogContent className="max-w-lg">
++                    <DialogHeader>
++                        <DialogTitle>Nova tarefa</DialogTitle>
++                        <DialogDescription>
+                             Adicione uma tarefa rapidamente.
+-                        </p>
+-                    </div>
++                        </DialogDescription>
++                    </DialogHeader>
++
++                    <div className="space-y-4">
+ 
+                     {/* Tarefa */}
+                     <div className="space-y-2">
+@@ -410,24 +407,36 @@ export function CreateTaskButton() {
+                         </>
+                     )}
+ 
+-                    <Button
+-                        className="w-full rounded-lg bg-blue-600 text-white transition hover:bg-blue-700"
+-                        disabled={
+-                            isSubmitting ||
+-                            !title.trim() ||
+-                            (
+-                                destination === 'TODAY' &&
+-                                !plannedDate
+-                            )
+-                        }
+-                        onClick={handleSubmit}
+-                    >
+-                        {isSubmitting
+-                            ? 'Adicionando...'
+-                            : 'Adicionar tarefa'}
+-                    </Button>
+-                </div>
+-            </PopoverContent>
+-        </Popover>
++                    </div>
++
++                    <DialogFooter>
++                        <Button
++                            variant="outline"
++                            onClick={() => setOpen(false)}
++                            disabled={isSubmitting}
++                        >
++                            Cancelar
++                        </Button>
++
++                        <Button
++                            className="bg-blue-600 text-white transition hover:bg-blue-700"
++                            disabled={
++                                isSubmitting ||
++                                !title.trim() ||
++                                (
++                                    destination === 'TODAY' &&
++                                    !plannedDate
++                                )
++                            }
++                            onClick={handleSubmit}
++                        >
++                            {isSubmitting
++                                ? 'Adicionando...'
++                                : 'Adicionar tarefa'}
++                        </Button>
++                    </DialogFooter>
++                </DialogContent>
++            </Dialog>
++        </>
+     )
+ }
+\ No newline at end of file
+diff --git a/components/dashboard/tag-actions.tsx b/components/dashboard/tag-actions.tsx
+index ade4e0e..86b6748 100644
+--- a/components/dashboard/tag-actions.tsx
++++ b/components/dashboard/tag-actions.tsx
+@@ -101,7 +101,7 @@ export function TagActions({
+ 
+     return (
+         <>
+-            <div className="flex items-center justify-end gap-2">
++            <div className="flex flex-wrap items-center justify-end gap-2">
+                 <button
+                     type="button"
+                     onClick={() => setEditOpen(true)}

@@ -7,9 +7,10 @@ import { boardColumn } from '@/db/schema/column'
 import { card } from '@/db/schema/card'
 import { cardTag } from '@/db/schema/card-tag'
 import { cardChecklistItem } from '@/db/schema/card-checklist-item'
+import { boardCardObservation } from '@/db/schema/board-card-observation'
 import { tag } from '@/db/schema/tag'
 import { authBoardActionClient } from '@/lib/safe-action'
-import { eq, max, and, asc, ne } from 'drizzle-orm'
+import { eq, max, and, asc, desc, ne } from 'drizzle-orm'
 import {
     columnColorSchema,
     columnTitleSchema,
@@ -64,6 +65,50 @@ const moveCardSchema = z.object({
     targetColumnId: z.string().min(1),
     targetPosition: z.number().int().min(0),
 })
+
+const getCardObservationsSchema = z.object({
+    cardId: z.string().min(1),
+})
+
+export const getCardObservations = authBoardActionClient
+    .inputSchema(getCardObservationsSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const [ownedCard] = await db
+            .select({ id: card.id })
+            .from(card)
+            .innerJoin(boardColumn, eq(card.columnId, boardColumn.id))
+            .where(
+                and(
+                    eq(card.id, parsedInput.cardId),
+                    eq(boardColumn.boardId, ctx.boardId)
+                )
+            )
+            .limit(1)
+
+        if (!ownedCard) throw new Error('Card não encontrado neste board.')
+
+        const observations = await db
+            .select({
+                id: boardCardObservation.id,
+                visitorName: boardCardObservation.visitorName,
+                content: boardCardObservation.content,
+                createdAt: boardCardObservation.createdAt,
+            })
+            .from(boardCardObservation)
+            .where(
+                and(
+                    eq(boardCardObservation.boardId, ctx.boardId),
+                    eq(boardCardObservation.cardId, parsedInput.cardId)
+                )
+            )
+            .orderBy(desc(boardCardObservation.createdAt))
+            .limit(100)
+
+        return observations.map((observation) => ({
+            ...observation,
+            createdAt: observation.createdAt.toISOString(),
+        }))
+    })
 
 export const createColumn = authBoardActionClient
     .inputSchema(createColumnSchema)

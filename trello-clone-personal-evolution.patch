@@ -1,0 +1,1877 @@
+diff --git a/app/(app)/pessoal/page.tsx b/app/(app)/pessoal/page.tsx
+index 43dea54..14340c8 100644
+--- a/app/(app)/pessoal/page.tsx
++++ b/app/(app)/pessoal/page.tsx
+@@ -1,10 +1,13 @@
+ import { headers } from 'next/headers'
+-import { and, asc, eq, ne } from 'drizzle-orm'
++import { and, asc, count, eq, inArray, ne } from 'drizzle-orm'
++import { User } from 'lucide-react'
+ 
+ import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ import { task } from '@/db/schema/task'
+-import { AreaPage } from '@/components/dashboard/area-page'
++import { taskTag } from '@/db/schema/task-tag'
++import { tag } from '@/db/schema/tag'
++import { PersonalView } from '@/components/personal/personal-view'
+ 
+ export default async function PessoalPage() {
+     const session = await auth.api.getSession({
+@@ -25,22 +28,189 @@ export default async function PessoalPage() {
+                 ne(task.status, 'CANCELED')
+             )
+         )
+-        .orderBy(
+-            asc(task.position),
+-            asc(task.createdAt)
+-        )
++        .orderBy(asc(task.position), asc(task.createdAt))
++
++    const taskIds = tasks.map((t) => t.id)
++
++    const [userTags, taskTagRows, usageRows] = await Promise.all([
++        db
++            .select()
++            .from(tag)
++            .where(eq(tag.userId, session.user.id))
++            .orderBy(asc(tag.name)),
++
++        taskIds.length > 0
++            ? db
++                .select({
++                    taskId: taskTag.taskId,
++                    id: tag.id,
++                    name: tag.name,
++                    color: tag.color,
++                })
++                .from(taskTag)
++                .innerJoin(tag, eq(taskTag.tagId, tag.id))
++                .where(inArray(taskTag.taskId, taskIds))
++            : Promise.resolve([]),
++
++        // Uso global (todas as áreas) — a tag não tem escopo, então
++        // "quantas tarefas usam essa tag" só pode ser respondido de
++        // forma honesta contando em todo o app, não só em Pessoal.
++        db
++            .select({
++                tagId: taskTag.tagId,
++                usageCount: count(taskTag.taskId),
++            })
++            .from(taskTag)
++            .innerJoin(task, eq(taskTag.taskId, task.id))
++            .where(eq(task.userId, session.user.id))
++            .groupBy(taskTag.tagId),
++    ])
++
++    const usageByTagId = new Map(
++        usageRows.map((row) => [row.tagId, row.usageCount])
++    )
++
++    const allTagsWithUsage = userTags.map((t) => ({
++        id: t.id,
++        name: t.name,
++        color: t.color,
++        usageCount: usageByTagId.get(t.id) ?? 0,
++    }))
++
++    const tagsByTaskId = new Map<
++        string,
++        Array<{ id: string; name: string; color: string }>
++    >()
++
++    for (const row of taskTagRows) {
++        const current = tagsByTaskId.get(row.taskId) ?? []
++        current.push({ id: row.id, name: row.name, color: row.color })
++        tagsByTaskId.set(row.taskId, current)
++    }
++
++    const tasksWithTags = tasks.map((t) => ({
++        id: t.id,
++        title: t.title,
++        description: t.description,
++        status: t.status as 'BACKLOG' | 'WEEK' | 'TODAY' | 'DOING' | 'DONE',
++        priority: t.priority,
++        isTopPriority: t.isTopPriority,
++        plannedDate: t.plannedDate,
++        plannedTime: t.plannedTime,
++        tags: tagsByTaskId.get(t.id) ?? [],
++    }))
++
++    // === MÉTRICAS (dados reais, ver auditoria) ===
++
++    const today = new Date()
++    today.setHours(0, 0, 0, 0)
++
++    const in7Days = new Date(today)
++    in7Days.setDate(in7Days.getDate() + 7)
++
++    function isInRange(date: Date | null, start: Date, end: Date) {
++        if (!date) return false
++        const d = new Date(date)
++        return d >= start && d < end
++    }
++
++    // "Compromissos da semana": tarefas pessoais planejadas nos
++    // próximos 7 dias (janela corrida a partir de hoje, não semana
++    // de calendário).
++    const commitmentsNext7Days = tasks.filter((t) =>
++        isInRange(t.plannedDate, today, in7Days)
++    ).length
++
++    // "Pendências pessoais": não concluídas E (prioridade alta OU
++    // data planejada já vencida). Regra objetiva com campos que já
++    // existem (priority, plannedDate, status).
++    const personalPending = tasks.filter((t) => {
++        if (t.status === 'DONE') return false
++
++        const isHighPriority = t.priority === 'HIGH'
++
++        const isOverdue =
++            t.plannedDate !== null && new Date(t.plannedDate) < today
++
++        return isHighPriority || isOverdue
++    }).length
+ 
+     return (
+-        <AreaPage
+-            title="Pessoal"
+-            description="Organize compromissos e tarefas da sua vida pessoal."
+-            tasks={tasks.map((item) => ({
+-                id: item.id,
+-                title: item.title,
+-                area: 'Pessoal',
+-                completed: item.status === 'DONE',
+-                topPriority: item.isTopPriority,
+-            }))}
+-        />
++        <div className="h-full overflow-y-auto bg-[#fbfcff]">
++            <div className="mx-auto max-w-360 px-4 py-6 sm:px-6 sm:py-8">
++
++                {/* CABEÇALHO */}
++                <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
++                    <div className="min-w-0">
++                        <div className="flex items-start gap-3">
++                            <div className="flex size-10 items-center justify-center rounded-xl bg-blue-600 text-white">
++                                <User className="size-5" />
++                            </div>
++
++                            <div>
++                                <h1 className="text-2xl font-bold tracking-tight text-slate-900">
++                                    Pessoal
++                                </h1>
++                                <p className="text-sm text-slate-500">
++                                    Cuide da sua vida com leveza, equilíbrio e intenção.
++                                </p>
++                            </div>
++                        </div>
++
++                        <p className="mt-5 text-xs text-slate-600">
++                            Organize sua rotina, cuide do seu bem-estar e mantenha o foco no que realmente importa. ✨
++                        </p>
++                    </div>
++
++                    <div className="flex flex-wrap items-stretch gap-3">
++                        <div className="hidden max-w-47.5 rounded-xl bg-blue-50 px-4 py-3 text-blue-600 xl:block">
++                            <p className="text-sm italic">
++                                &ldquo;Uma vida mais leve também é uma vida produtiva.&rdquo;
++                            </p>
++                        </div>
++
++                        <div className="min-w-37.5 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
++                            <p className="text-xs text-slate-500">Hábitos ativos</p>
++                            <p className="text-xl font-bold text-slate-900">—</p>
++                            <p className="mt-0.5 text-[11px] text-slate-400">
++                                sem hábitos vinculados à área Pessoal
++                            </p>
++                        </div>
++
++                        <div className="min-w-37.5 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
++                            <p className="text-xs text-slate-500">
++                                Compromissos da semana
++                            </p>
++                            <p className="text-xl font-bold text-slate-900">
++                                {commitmentsNext7Days}
++                            </p>
++                            <p className="mt-0.5 text-[11px] text-slate-400">
++                                nos próximos 7 dias
++                            </p>
++                        </div>
++
++                        <div className="min-w-37.5 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
++                            <p className="text-xs text-slate-500">
++                                Pendências pessoais
++                            </p>
++                            <p className="text-xl font-bold text-slate-900">
++                                {personalPending}
++                            </p>
++                            <p className="mt-0.5 text-[11px] text-slate-400">
++                                precisam de atenção
++                            </p>
++                        </div>
++                    </div>
++                </div>
++
++                {/* CONTROLES + VIEWS */}
++                <PersonalView
++                    tasks={tasksWithTags}
++                    availableTags={userTags}
++                    allTagsWithUsage={allTagsWithUsage}
++                />
++
++            </div>
++        </div>
+     )
+-}
+\ No newline at end of file
++}
+diff --git a/components/personal/new-personal-task-button.tsx b/components/personal/new-personal-task-button.tsx
+new file mode 100644
+index 0000000..03adafc
+--- /dev/null
++++ b/components/personal/new-personal-task-button.tsx
+@@ -0,0 +1,232 @@
++'use client'
++
++import { useState } from 'react'
++import { toast } from 'sonner'
++
++import { createTask } from '@/app/(app)/hoje/_actions/create-task'
++import { Button } from '@/components/ui/button'
++import { Input } from '@/components/ui/input'
++import { Label } from '@/components/ui/label'
++import {
++    Popover,
++    PopoverContent,
++    PopoverTrigger,
++} from '@/components/ui/popover'
++
++type Priority = 'LOW' | 'MEDIUM' | 'HIGH'
++
++interface NewPersonalTaskButtonProps {
++    availableTags: Array<{ id: string; name: string; color: string }>
++}
++
++function getTodayString() {
++    const today = new Date()
++    const year = today.getFullYear()
++    const month = String(today.getMonth() + 1).padStart(2, '0')
++    const day = String(today.getDate()).padStart(2, '0')
++    return `${year}-${month}-${day}`
++}
++
++export function NewPersonalTaskButton({
++    availableTags,
++}: NewPersonalTaskButtonProps) {
++    const [open, setOpen] = useState(false)
++    const [title, setTitle] = useState('')
++    const [description, setDescription] = useState('')
++    const [plannedDate, setPlannedDate] = useState(getTodayString())
++    const [plannedTime, setPlannedTime] = useState('')
++    const [priority, setPriority] = useState<Priority>('MEDIUM')
++    const [tagIds, setTagIds] = useState<string[]>([])
++    const [isSubmitting, setIsSubmitting] = useState(false)
++
++    function resetForm() {
++        setTitle('')
++        setDescription('')
++        setPlannedDate(getTodayString())
++        setPlannedTime('')
++        setPriority('MEDIUM')
++        setTagIds([])
++    }
++
++    async function handleSubmit() {
++        if (!title.trim() || !plannedDate) return
++
++        try {
++            setIsSubmitting(true)
++
++            const result = await createTask({
++                destination: 'TODAY',
++                title,
++                description: description || undefined,
++                area: 'PERSONAL',
++                priority,
++                plannedDate,
++                plannedTime: plannedTime || undefined,
++                tagIds: tagIds.length > 0 ? tagIds : undefined,
++            })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                return
++            }
++
++            resetForm()
++            setOpen(false)
++        } finally {
++            setIsSubmitting(false)
++        }
++    }
++
++    return (
++        <Popover open={open} onOpenChange={setOpen}>
++            <PopoverTrigger asChild>
++                <Button className="h-11 rounded-xl bg-blue-600 px-4 text-sm font-medium text-white hover:bg-blue-700">
++                    + Nova tarefa
++                </Button>
++            </PopoverTrigger>
++
++            <PopoverContent
++                align="end"
++                side="bottom"
++                sideOffset={12}
++                collisionPadding={16}
++                className="max-h-[70vh] w-90 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-5 shadow-xl"
++            >
++                <div className="space-y-4">
++                    <div>
++                        <h3 className="text-base font-semibold text-slate-900">
++                            Nova tarefa pessoal
++                        </h3>
++                        <p className="mt-1 text-xs text-slate-500">
++                            Adicione algo da sua rotina, saúde ou compromissos.
++                        </p>
++                    </div>
++
++                    <div className="space-y-2">
++                        <Label htmlFor="personal-title">Título</Label>
++                        <Input
++                            id="personal-title"
++                            placeholder="Ex.: Marcar consulta médica"
++                            value={title}
++                            onChange={(e) => setTitle(e.target.value)}
++                            onKeyDown={(e) => {
++                                if (e.key === 'Enter') handleSubmit()
++                            }}
++                        />
++                    </div>
++
++                    <div className="space-y-2">
++                        <Label htmlFor="personal-description">
++                            Descrição (opcional)
++                        </Label>
++                        <Input
++                            id="personal-description"
++                            placeholder="Detalhes, se precisar"
++                            value={description}
++                            onChange={(e) => setDescription(e.target.value)}
++                        />
++                    </div>
++
++                    <div className="grid grid-cols-2 gap-3">
++                        <div className="space-y-2">
++                            <Label htmlFor="personal-date">Data</Label>
++                            <Input
++                                id="personal-date"
++                                type="date"
++                                value={plannedDate}
++                                onChange={(e) => setPlannedDate(e.target.value)}
++                            />
++                        </div>
++
++                        <div className="space-y-2">
++                            <Label htmlFor="personal-time">
++                                Horário (opcional)
++                            </Label>
++                            <Input
++                                id="personal-time"
++                                type="time"
++                                value={plannedTime}
++                                onChange={(e) => setPlannedTime(e.target.value)}
++                            />
++                        </div>
++                    </div>
++
++                    <div className="space-y-2">
++                        <Label>Prioridade</Label>
++                        <div className="grid grid-cols-3 gap-2">
++                            {(['LOW', 'MEDIUM', 'HIGH'] as Priority[]).map(
++                                (p) => (
++                                    <Button
++                                        key={p}
++                                        type="button"
++                                        variant="outline"
++                                        size="sm"
++                                        onClick={() => setPriority(p)}
++                                        className={
++                                            priority === p
++                                                ? 'border-blue-600 bg-blue-600 text-white hover:bg-blue-700 hover:text-white'
++                                                : ''
++                                        }
++                                    >
++                                        {p === 'LOW'
++                                            ? 'Baixa'
++                                            : p === 'MEDIUM'
++                                                ? 'Média'
++                                                : 'Alta'}
++                                    </Button>
++                                )
++                            )}
++                        </div>
++                    </div>
++
++                    {availableTags.length > 0 && (
++                        <div className="space-y-2">
++                            <Label>Tags</Label>
++                            <div className="flex flex-wrap gap-2">
++                                {availableTags.map((t) => {
++                                    const active = tagIds.includes(t.id)
++                                    return (
++                                        <button
++                                            key={t.id}
++                                            type="button"
++                                            onClick={() =>
++                                                setTagIds((current) =>
++                                                    active
++                                                        ? current.filter(
++                                                            (id) => id !== t.id
++                                                        )
++                                                        : [...current, t.id]
++                                                )
++                                            }
++                                            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
++                                                active
++                                                    ? 'border-slate-900 bg-slate-900 text-white'
++                                                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
++                                            }`}
++                                        >
++                                            <span
++                                                className="size-2 rounded-full"
++                                                style={{
++                                                    backgroundColor: t.color,
++                                                }}
++                                            />
++                                            {t.name}
++                                        </button>
++                                    )
++                                })}
++                            </div>
++                        </div>
++                    )}
++
++                    <Button
++                        className="w-full rounded-lg bg-blue-600 text-white transition hover:bg-blue-700"
++                        disabled={isSubmitting || !title.trim() || !plannedDate}
++                        onClick={handleSubmit}
++                    >
++                        {isSubmitting ? 'Adicionando...' : 'Adicionar tarefa'}
++                    </Button>
++                </div>
++            </PopoverContent>
++        </Popover>
++    )
++}
+diff --git a/components/personal/personal-calendar.tsx b/components/personal/personal-calendar.tsx
+new file mode 100644
+index 0000000..c971d68
+--- /dev/null
++++ b/components/personal/personal-calendar.tsx
+@@ -0,0 +1,188 @@
++'use client'
++
++import { useMemo, useState } from 'react'
++import { ChevronLeft, ChevronRight } from 'lucide-react'
++
++import { PersonalTask, PersonalTaskCard, PersonalTag } from './personal-task-card'
++
++interface PersonalCalendarProps {
++    tasks: PersonalTask[]
++    availableTags: PersonalTag[]
++}
++
++function dateKey(date: Date) {
++    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
++        date.getDate()
++    ).padStart(2, '0')}`
++}
++
++function startOfMonth(date: Date) {
++    return new Date(date.getFullYear(), date.getMonth(), 1)
++}
++
++const WEEKDAY_LABELS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
++
++export function PersonalCalendar({ tasks, availableTags }: PersonalCalendarProps) {
++    const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()))
++    const [selectedDay, setSelectedDay] = useState<string | null>(() =>
++        dateKey(new Date())
++    )
++
++    const tasksByDay = useMemo(() => {
++        const map = new Map<string, PersonalTask[]>()
++
++        for (const task of tasks) {
++            if (!task.plannedDate) continue
++            const key = dateKey(new Date(task.plannedDate))
++            const current = map.get(key) ?? []
++            current.push(task)
++            map.set(key, current)
++        }
++
++        return map
++    }, [tasks])
++
++    const gridDays = useMemo(() => {
++        const first = monthCursor
++        const firstWeekday = first.getDay()
++        const daysInMonth = new Date(
++            first.getFullYear(),
++            first.getMonth() + 1,
++            0
++        ).getDate()
++
++        const days: Array<{ date: Date; inCurrentMonth: boolean }> = []
++
++        for (let i = 0; i < firstWeekday; i++) {
++            const date = new Date(first)
++            date.setDate(date.getDate() - (firstWeekday - i))
++            days.push({ date, inCurrentMonth: false })
++        }
++
++        for (let day = 1; day <= daysInMonth; day++) {
++            days.push({
++                date: new Date(first.getFullYear(), first.getMonth(), day),
++                inCurrentMonth: true,
++            })
++        }
++
++        while (days.length % 7 !== 0) {
++            const last = days[days.length - 1].date
++            const date = new Date(last)
++            date.setDate(date.getDate() + 1)
++            days.push({ date, inCurrentMonth: false })
++        }
++
++        return days
++    }, [monthCursor])
++
++    const todayKey = dateKey(new Date())
++    const selectedTasks = selectedDay ? tasksByDay.get(selectedDay) ?? [] : []
++
++    return (
++        <div className="mx-auto w-full max-w-2xl">
++            <div className="mb-4 flex items-center justify-between">
++                <button
++                    type="button"
++                    onClick={() =>
++                        setMonthCursor(
++                            (m) => new Date(m.getFullYear(), m.getMonth() - 1, 1)
++                        )
++                    }
++                    className="flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
++                    aria-label="Mês anterior"
++                >
++                    <ChevronLeft className="size-4" />
++                </button>
++
++                <p className="text-sm font-semibold capitalize text-slate-900">
++                    {monthCursor.toLocaleDateString('pt-BR', {
++                        month: 'long',
++                        year: 'numeric',
++                    })}
++                </p>
++
++                <button
++                    type="button"
++                    onClick={() =>
++                        setMonthCursor(
++                            (m) => new Date(m.getFullYear(), m.getMonth() + 1, 1)
++                        )
++                    }
++                    className="flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
++                    aria-label="Próximo mês"
++                >
++                    <ChevronRight className="size-4" />
++                </button>
++            </div>
++
++            <div className="grid grid-cols-7 gap-1 text-center">
++                {WEEKDAY_LABELS.map((label, i) => (
++                    <div key={i} className="py-1 text-[11px] font-medium text-slate-400">
++                        {label}
++                    </div>
++                ))}
++
++                {gridDays.map(({ date, inCurrentMonth }) => {
++                    const key = dateKey(date)
++                    const count = tasksByDay.get(key)?.length ?? 0
++                    const isSelected = key === selectedDay
++                    const isToday = key === todayKey
++
++                    return (
++                        <button
++                            key={key}
++                            type="button"
++                            onClick={() => setSelectedDay(key)}
++                            className={`relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm transition ${
++                                !inCurrentMonth
++                                    ? 'text-slate-300'
++                                    : isSelected
++                                        ? 'bg-blue-600 text-white'
++                                        : isToday
++                                            ? 'bg-blue-50 text-blue-600'
++                                            : 'text-slate-700 hover:bg-slate-100'
++                            }`}
++                        >
++                            {date.getDate()}
++                            {count > 0 && (
++                                <span
++                                    className={`mt-0.5 size-1.5 rounded-full ${
++                                        isSelected ? 'bg-white' : 'bg-blue-500'
++                                    }`}
++                                />
++                            )}
++                        </button>
++                    )
++                })}
++            </div>
++
++            <div className="mt-6">
++                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
++                    {selectedDay
++                        ? new Date(`${selectedDay}T00:00:00`).toLocaleDateString(
++                            'pt-BR',
++                            { day: '2-digit', month: 'long' }
++                        )
++                        : 'Selecione um dia'}
++                </p>
++
++                {selectedTasks.length === 0 ? (
++                    <p className="text-sm text-slate-400">
++                        Nenhuma tarefa planejada para este dia.
++                    </p>
++                ) : (
++                    <div className="flex flex-col gap-3">
++                        {selectedTasks.map((task) => (
++                            <PersonalTaskCard
++                                key={task.id}
++                                task={task}
++                                availableTags={availableTags}
++                            />
++                        ))}
++                    </div>
++                )}
++            </div>
++        </div>
++    )
++}
+diff --git a/components/personal/personal-filters.tsx b/components/personal/personal-filters.tsx
+new file mode 100644
+index 0000000..6d1daac
+--- /dev/null
++++ b/components/personal/personal-filters.tsx
+@@ -0,0 +1,196 @@
++'use client'
++
++import { SlidersHorizontal } from 'lucide-react'
++
++import {
++    Popover,
++    PopoverContent,
++    PopoverTrigger,
++} from '@/components/ui/popover'
++import { Button } from '@/components/ui/button'
++
++export type PersonalStatusFilter = 'TODAY' | 'WEEK' | 'DOING' | 'DONE'
++export type PersonalPriorityFilter = 'LOW' | 'MEDIUM' | 'HIGH'
++
++export interface PersonalFilterState {
++    statuses: PersonalStatusFilter[]
++    priorities: PersonalPriorityFilter[]
++    tagIds: string[]
++}
++
++export const EMPTY_PERSONAL_FILTERS: PersonalFilterState = {
++    statuses: [],
++    priorities: [],
++    tagIds: [],
++}
++
++const STATUS_LABELS: Record<PersonalStatusFilter, string> = {
++    TODAY: 'Hoje',
++    DOING: 'Fazendo',
++    WEEK: 'Esta semana',
++    DONE: 'Concluído',
++}
++
++const PRIORITY_LABELS: Record<PersonalPriorityFilter, string> = {
++    LOW: 'Baixa',
++    MEDIUM: 'Média',
++    HIGH: 'Alta',
++}
++
++interface PersonalFiltersProps {
++    value: PersonalFilterState
++    onChange: (value: PersonalFilterState) => void
++    availableTags: Array<{ id: string; name: string; color: string }>
++}
++
++function toggle<T>(list: T[], item: T): T[] {
++    return list.includes(item)
++        ? list.filter((i) => i !== item)
++        : [...list, item]
++}
++
++export function PersonalFilters({
++    value,
++    onChange,
++    availableTags,
++}: PersonalFiltersProps) {
++    const activeCount =
++        value.statuses.length + value.priorities.length + value.tagIds.length
++
++    return (
++        <Popover>
++            <PopoverTrigger asChild>
++                <Button
++                    variant="outline"
++                    className="flex h-11 items-center gap-2 rounded-xl border-slate-200 bg-white px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
++                >
++                    <SlidersHorizontal className="size-4" />
++                    Filtros
++                    {activeCount > 0 && (
++                        <span className="flex size-5 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white">
++                            {activeCount}
++                        </span>
++                    )}
++                </Button>
++            </PopoverTrigger>
++
++            <PopoverContent align="end" className="w-72 space-y-4 p-4">
++                <div>
++                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
++                        Status
++                    </p>
++                    <div className="flex flex-wrap gap-2">
++                        {(Object.keys(STATUS_LABELS) as PersonalStatusFilter[]).map(
++                            (status) => {
++                                const active = value.statuses.includes(status)
++                                return (
++                                    <button
++                                        key={status}
++                                        type="button"
++                                        onClick={() =>
++                                            onChange({
++                                                ...value,
++                                                statuses: toggle(
++                                                    value.statuses,
++                                                    status
++                                                ),
++                                            })
++                                        }
++                                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
++                                            active
++                                                ? 'border-slate-900 bg-slate-900 text-white'
++                                                : 'border-slate-200 text-slate-600 hover:bg-slate-50'
++                                        }`}
++                                    >
++                                        {STATUS_LABELS[status]}
++                                    </button>
++                                )
++                            }
++                        )}
++                    </div>
++                </div>
++
++                <div>
++                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
++                        Prioridade
++                    </p>
++                    <div className="flex flex-wrap gap-2">
++                        {(Object.keys(PRIORITY_LABELS) as PersonalPriorityFilter[]).map(
++                            (priority) => {
++                                const active = value.priorities.includes(priority)
++                                return (
++                                    <button
++                                        key={priority}
++                                        type="button"
++                                        onClick={() =>
++                                            onChange({
++                                                ...value,
++                                                priorities: toggle(
++                                                    value.priorities,
++                                                    priority
++                                                ),
++                                            })
++                                        }
++                                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
++                                            active
++                                                ? 'border-slate-900 bg-slate-900 text-white'
++                                                : 'border-slate-200 text-slate-600 hover:bg-slate-50'
++                                        }`}
++                                    >
++                                        {PRIORITY_LABELS[priority]}
++                                    </button>
++                                )
++                            }
++                        )}
++                    </div>
++                </div>
++
++                {availableTags.length > 0 && (
++                    <div>
++                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
++                            Tags
++                        </p>
++                        <div className="flex flex-wrap gap-2">
++                            {availableTags.map((t) => {
++                                const active = value.tagIds.includes(t.id)
++                                return (
++                                    <button
++                                        key={t.id}
++                                        type="button"
++                                        onClick={() =>
++                                            onChange({
++                                                ...value,
++                                                tagIds: toggle(value.tagIds, t.id),
++                                            })
++                                        }
++                                        className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
++                                            active
++                                                ? 'border-slate-900 bg-slate-900 text-white'
++                                                : 'border-slate-200 text-slate-600 hover:bg-slate-50'
++                                        }`}
++                                    >
++                                        <span
++                                            className="size-2 rounded-full"
++                                            style={{ backgroundColor: t.color }}
++                                        />
++                                        {t.name}
++                                    </button>
++                                )
++                            })}
++                        </div>
++                    </div>
++                )}
++
++                {activeCount > 0 && (
++                    <button
++                        type="button"
++                        onClick={() => onChange(EMPTY_PERSONAL_FILTERS)}
++                        className="text-xs font-medium text-slate-400 hover:text-slate-700"
++                    >
++                        Limpar filtros
++                    </button>
++                )}
++            </PopoverContent>
++        </Popover>
++    )
++}
+diff --git a/components/personal/personal-kanban.tsx b/components/personal/personal-kanban.tsx
+new file mode 100644
+index 0000000..d815851
+--- /dev/null
++++ b/components/personal/personal-kanban.tsx
+@@ -0,0 +1,105 @@
++'use client'
++
++import { CheckCircle2 } from 'lucide-react'
++
++import { PersonalTask, PersonalTaskCard, PersonalTag } from './personal-task-card'
++import {
++    getPersonalGroup,
++    PERSONAL_GROUP_LABELS,
++    PERSONAL_GROUP_SUBTITLES,
++    type PersonalGroup,
++} from '@/lib/personal/group'
++
++interface PersonalKanbanProps {
++    tasks: PersonalTask[]
++    availableTags: PersonalTag[]
++}
++
++const COLUMN_ORDER: PersonalGroup[] = [
++    'routine',
++    'health',
++    'commitments',
++    'completed',
++]
++
++const COLUMN_ACCENT: Record<PersonalGroup, string> = {
++    routine: 'bg-blue-500',
++    health: 'bg-emerald-500',
++    commitments: 'bg-amber-500',
++    completed: 'bg-slate-400',
++}
++
++export function PersonalKanban({ tasks, availableTags }: PersonalKanbanProps) {
++    const grouped: Record<PersonalGroup, PersonalTask[]> = {
++        routine: [],
++        health: [],
++        commitments: [],
++        completed: [],
++    }
++
++    for (const task of tasks) {
++        grouped[getPersonalGroup(task)].push(task)
++    }
++
++    return (
++        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
++            {COLUMN_ORDER.map((group) => {
++                const columnTasks = grouped[group]
++
++                return (
++                    <section
++                        key={group}
++                        className="rounded-2xl border border-slate-200 bg-slate-50/60 p-3"
++                    >
++                        <div className="mb-3 flex items-center gap-2">
++                            <span
++                                className={`size-2 rounded-full ${COLUMN_ACCENT[group]}`}
++                            />
++                            <h2 className="text-sm font-semibold text-slate-900">
++                                {PERSONAL_GROUP_LABELS[group]}
++                            </h2>
++                            <span className="rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">
++                                {columnTasks.length}
++                            </span>
++                        </div>
++
++                        <p className="mb-3 text-xs text-slate-500">
++                            {PERSONAL_GROUP_SUBTITLES[group]}
++                        </p>
++
++                        <div className="space-y-3">
++                            {columnTasks.length > 0 ? (
++                                columnTasks.map((task) => (
++                                    <PersonalTaskCard
++                                        key={task.id}
++                                        task={task}
++                                        availableTags={availableTags}
++                                    />
++                                ))
++                            ) : group === 'completed' ? (
++                                <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-slate-200 bg-white px-4 py-8 text-center">
++                                    <CheckCircle2 className="size-8 text-emerald-400" />
++                                    <p className="text-sm font-medium text-slate-700">
++                                        Tudo em dia por aqui!
++                                    </p>
++                                    <p className="text-xs text-slate-400">
++                                        Continue cuidando das suas conquistas.
++                                        Você está indo bem.
++                                    </p>
++                                    <p className="mt-1 text-[11px] italic text-blue-500">
++                                        &ldquo;Equilíbrio hoje, mais conquistas
++                                        amanhã.&rdquo;
++                                    </p>
++                                </div>
++                            ) : (
++                                <div className="rounded-xl border border-dashed border-slate-200 bg-white p-5 text-center text-xs text-slate-400">
++                                    Nada por aqui.
++                                </div>
++                            )}
++                        </div>
++                    </section>
++                )
++            })}
++        </div>
++    )
++}
+diff --git a/components/personal/personal-list.tsx b/components/personal/personal-list.tsx
+new file mode 100644
+index 0000000..cedac3a
+--- /dev/null
++++ b/components/personal/personal-list.tsx
+@@ -0,0 +1,70 @@
++'use client'
++
++import { PersonalTask, PersonalTaskCard, PersonalTag } from './personal-task-card'
++import {
++    getPersonalGroup,
++    PERSONAL_GROUP_LABELS,
++    type PersonalGroup,
++} from '@/lib/personal/group'
++
++interface PersonalListProps {
++    tasks: PersonalTask[]
++    availableTags: PersonalTag[]
++}
++
++const GROUP_ORDER: PersonalGroup[] = [
++    'routine',
++    'health',
++    'commitments',
++    'completed',
++]
++
++export function PersonalList({ tasks, availableTags }: PersonalListProps) {
++    if (tasks.length === 0) {
++        return (
++            <div className="flex min-h-40 items-center justify-center">
++                <p className="text-sm text-slate-400">
++                    Nenhuma tarefa pessoal encontrada.
++                </p>
++            </div>
++        )
++    }
++
++    const groups: Record<PersonalGroup, PersonalTask[]> = {
++        routine: [],
++        health: [],
++        commitments: [],
++        completed: [],
++    }
++
++    for (const task of tasks) {
++        groups[getPersonalGroup(task)].push(task)
++    }
++
++    return (
++        <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
++            {GROUP_ORDER.map((group) => {
++                const groupTasks = groups[group]
++                if (groupTasks.length === 0) return null
++
++                return (
++                    <div key={group}>
++                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
++                            {PERSONAL_GROUP_LABELS[group]} ({groupTasks.length})
++                        </p>
++
++                        <div className="flex flex-col gap-2">
++                            {groupTasks.map((task) => (
++                                <PersonalTaskCard
++                                    key={task.id}
++                                    task={task}
++                                    availableTags={availableTags}
++                                />
++                            ))}
++                        </div>
++                    </div>
++                )
++            })}
++        </div>
++    )
++}
+diff --git a/components/personal/personal-quick-tags.tsx b/components/personal/personal-quick-tags.tsx
+new file mode 100644
+index 0000000..fd94c60
+--- /dev/null
++++ b/components/personal/personal-quick-tags.tsx
+@@ -0,0 +1,66 @@
++'use client'
++
++import { useState } from 'react'
++
++interface QuickTag {
++    id: string
++    name: string
++    color: string
++}
++
++interface PersonalQuickTagsProps {
++    tags: QuickTag[]
++    selectedIds: string[]
++    onToggle: (tagId: string) => void
++}
++
++const VISIBLE_LIMIT = 6
++
++export function PersonalQuickTags({
++    tags,
++    selectedIds,
++    onToggle,
++}: PersonalQuickTagsProps) {
++    const [expanded, setExpanded] = useState(false)
++
++    if (tags.length === 0) return null
++
++    const visibleTags = expanded ? tags : tags.slice(0, VISIBLE_LIMIT)
++    const hiddenCount = tags.length - visibleTags.length
++
++    return (
++        <div className="flex flex-wrap items-center gap-2">
++            {visibleTags.map((t) => {
++                const active = selectedIds.includes(t.id)
++                return (
++                    <button
++                        key={t.id}
++                        type="button"
++                        onClick={() => onToggle(t.id)}
++                        className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
++                            active
++                                ? 'border-slate-900 bg-slate-900 text-white'
++                                : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
++                        }`}
++                    >
++                        <span
++                            className="size-2 rounded-full"
++                            style={{ backgroundColor: t.color }}
++                        />
++                        {t.name}
++                    </button>
++                )
++            })}
++
++            {!expanded && hiddenCount > 0 && (
++                <button
++                    type="button"
++                    onClick={() => setExpanded(true)}
++                    className="rounded-full border border-dashed border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-400 hover:bg-slate-50"
++                >
++                    +{hiddenCount} mais
++                </button>
++            )}
++        </div>
++    )
++}
+diff --git a/components/personal/personal-tags-manager.tsx b/components/personal/personal-tags-manager.tsx
+new file mode 100644
+index 0000000..837ca04
+--- /dev/null
++++ b/components/personal/personal-tags-manager.tsx
+@@ -0,0 +1,204 @@
++'use client'
++
++import { useState, useTransition } from 'react'
++import { Loader2, Plus, Tag as TagIcon } from 'lucide-react'
++import { toast } from 'sonner'
++import { useRouter } from 'next/navigation'
++
++import { createTag } from '@/app/(app)/tags/actions'
++import { TagActions } from '@/components/dashboard/tag-actions'
++import {
++    Popover,
++    PopoverContent,
++    PopoverTrigger,
++} from '@/components/ui/popover'
++import { Button } from '@/components/ui/button'
++
++const COLORS = [
++    '#2563eb',
++    '#16a34a',
++    '#dc2626',
++    '#d97706',
++    '#7c3aed',
++    '#db2777',
++    '#ea580c',
++    '#64748b',
++]
++
++interface TagWithUsage {
++    id: string
++    name: string
++    color: string
++    /**
++     * Uso em TODAS as tarefas do usuário (a tag é global — não há
++     * como contar "só uso em Pessoal" sem um campo de escopo). O
++     * texto deixa isso claro pra não sugerir uma contagem que o
++     * modelo não sustenta.
++     */
++    usageCount: number
++}
++
++interface PersonalTagsManagerProps {
++    tags: TagWithUsage[]
++}
++
++export function PersonalTagsManager({ tags }: PersonalTagsManagerProps) {
++    const [creating, setCreating] = useState(false)
++    const [name, setName] = useState('')
++    const [color, setColor] = useState(COLORS[0])
++    const [isPending, startTransition] = useTransition()
++    const router = useRouter()
++
++    function handleCreate() {
++        const trimmed = name.trim()
++        if (!trimmed) return
++
++        startTransition(async () => {
++            const result = await createTag({ name: trimmed, color })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                return
++            }
++
++            setName('')
++            setColor(COLORS[0])
++            setCreating(false)
++            router.refresh()
++        })
++    }
++
++    return (
++        <Popover>
++            <PopoverTrigger asChild>
++                <Button
++                    variant="outline"
++                    className="flex h-11 items-center gap-2 rounded-xl border-slate-200 bg-white px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
++                >
++                    <TagIcon className="size-4" />
++                    Tags
++                </Button>
++            </PopoverTrigger>
++
++            <PopoverContent
++                align="end"
++                className="max-h-[70vh] w-80 overflow-y-auto space-y-3 p-4"
++            >
++                <div>
++                    <h3 className="text-sm font-semibold text-slate-900">
++                        Suas tags
++                    </h3>
++                    <p className="mt-0.5 text-xs text-slate-400">
++                        As tags são globais — valem em qualquer área do app,
++                        não só em Pessoal.
++                    </p>
++                </div>
++
++                {tags.length === 0 ? (
++                    <p className="py-2 text-sm text-slate-400">
++                        Você ainda não tem tags.
++                    </p>
++                ) : (
++                    <div className="space-y-2">
++                        {tags.map((t) => (
++                            <div
++                                key={t.id}
++                                className="rounded-xl border border-slate-100 p-2.5"
++                            >
++                                <div className="mb-2 flex items-center gap-2">
++                                    <span
++                                        className="size-3 shrink-0 rounded-full"
++                                        style={{ backgroundColor: t.color }}
++                                    />
++                                    <span className="flex-1 truncate text-sm font-medium text-slate-800">
++                                        {t.name}
++                                    </span>
++                                    <span className="shrink-0 text-[11px] text-slate-400">
++                                        {t.usageCount === 0
++                                            ? 'sem uso'
++                                            : `usada em ${t.usageCount} tarefa${
++                                                t.usageCount > 1 ? 's' : ''
++                                            }`}
++                                    </span>
++                                </div>
++
++                                <TagActions
++                                    tagId={t.id}
++                                    name={t.name}
++                                    color={t.color}
++                                />
++                            </div>
++                        ))}
++                    </div>
++                )}
++
++                <div className="border-t border-slate-100 pt-3">
++                    {!creating ? (
++                        <button
++                            type="button"
++                            onClick={() => setCreating(true)}
++                            className="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
++                        >
++                            <Plus className="size-4" />
++                            Nova tag
++                        </button>
++                    ) : (
++                        <div className="space-y-3">
++                            <input
++                                type="text"
++                                value={name}
++                                onChange={(e) => setName(e.target.value)}
++                                placeholder="Nome da tag"
++                                autoFocus
++                                className="h-10 w-full rounded-lg border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
++                            />
++
++                            <div className="flex flex-wrap gap-2">
++                                {COLORS.map((item) => (
++                                    <button
++                                        key={item}
++                                        type="button"
++                                        onClick={() => setColor(item)}
++                                        className={`size-7 rounded-full border-2 transition ${
++                                            color === item
++                                                ? 'border-slate-900'
++                                                : 'border-transparent'
++                                        }`}
++                                        style={{ backgroundColor: item }}
++                                        aria-label={`Selecionar cor ${item}`}
++                                    />
++                                ))}
++                            </div>
++
++                            <div className="flex justify-end gap-2">
++                                <button
++                                    type="button"
++                                    onClick={() => {
++                                        setCreating(false)
++                                        setName('')
++                                    }}
++                                    disabled={isPending}
++                                    className="h-9 rounded-lg border border-slate-200 px-3 text-xs font-medium text-slate-600 hover:bg-slate-50"
++                                >
++                                    Cancelar
++                                </button>
++
++                                <button
++                                    type="button"
++                                    onClick={handleCreate}
++                                    disabled={isPending || !name.trim()}
++                                    className="flex h-9 items-center gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
++                                >
++                                    {isPending && (
++                                        <Loader2 className="size-3.5 animate-spin" />
++                                    )}
++                                    Criar tag
++                                </button>
++                            </div>
++                        </div>
++                    )}
++                </div>
++            </PopoverContent>
++        </Popover>
++    )
++}
+diff --git a/components/personal/personal-task-card.tsx b/components/personal/personal-task-card.tsx
+new file mode 100644
+index 0000000..b5534d9
+--- /dev/null
++++ b/components/personal/personal-task-card.tsx
+@@ -0,0 +1,265 @@
++'use client'
++
++import { useTransition } from 'react'
++import { useAction } from 'next-safe-action/hooks'
++import { CalendarDays, Star } from 'lucide-react'
++import { toast } from 'sonner'
++
++import { completeTask } from '@/app/(app)/hoje/_actions/complete-task'
++import { toggleTopPriority } from '@/app/(app)/hoje/_actions/toggle-top-priority'
++import { updateTaskStatus } from '@/app/(app)/hoje/_actions/update-task-status'
++import { toggleTaskTag } from '@/app/(app)/hoje/_actions/toggle-task-tag'
++import { TaskActions } from '@/components/dashboard/task-actions'
++
++export type PersonalStatus = 'BACKLOG' | 'WEEK' | 'TODAY' | 'DOING' | 'DONE'
++
++export interface PersonalTag {
++    id: string
++    name: string
++    color: string
++}
++
++export interface PersonalTask {
++    id: string
++    title: string
++    description: string | null
++    status: PersonalStatus
++    priority: 'LOW' | 'MEDIUM' | 'HIGH'
++    isTopPriority: boolean
++    plannedDate: Date | null
++    plannedTime: string | null
++    tags: PersonalTag[]
++}
++
++/**
++ * `status` representa andamento real da tarefa — nunca tema/grupo
++ * visual. O grupo visual (Rotina/Saúde/Compromissos) vem das tags,
++ * via getPersonalGroup(). Ver lib/personal/group.ts.
++ */
++const STATUS_LABELS: Record<'BACKLOG' | 'WEEK' | 'TODAY' | 'DOING' | 'DONE', string> = {
++    TODAY: 'Hoje',
++    WEEK: 'Esta semana',
++    DOING: 'Fazendo',
++    BACKLOG: 'Sem data',
++    DONE: 'Concluído',
++}
++
++interface PersonalTaskCardProps {
++    task: PersonalTask
++    availableTags: PersonalTag[]
++}
++
++export function PersonalTaskCard({ task, availableTags }: PersonalTaskCardProps) {
++    const [isPending, startTransition] = useTransition()
++    const completed = task.status === 'DONE'
++
++    const { execute: execStatus } = useAction(updateTaskStatus, {
++        onError: () => toast.error('Erro ao mover a tarefa.'),
++    })
++
++    const { execute: execToggleTag } = useAction(toggleTaskTag, {
++        onError: () => toast.error('Erro ao atualizar tag.'),
++    })
++
++    function handleComplete() {
++        if (isPending) return
++        startTransition(async () => {
++            await completeTask({
++                taskId: task.id,
++                completed,
++                returnStatus: 'TODAY',
++            })
++        })
++    }
++
++    function handlePriority() {
++        if (isPending) return
++        startTransition(async () => {
++            await toggleTopPriority({
++                taskId: task.id,
++                currentValue: task.isTopPriority,
++            })
++        })
++    }
++
++    const attachedIds = new Set(task.tags.map((t) => t.id))
++
++    return (
++        <article
++            className={`rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition ${
++                isPending ? 'opacity-50' : 'hover:shadow-md'
++            }`}
++        >
++            <div className="flex items-start gap-3">
++                <input
++                    type="checkbox"
++                    checked={completed}
++                    disabled={isPending}
++                    onChange={handleComplete}
++                    className="mt-1 size-4 shrink-0 rounded"
++                    aria-label={completed ? 'Reabrir tarefa' : 'Concluir tarefa'}
++                />
++
++                <div className="min-w-0 flex-1">
++                    <p
++                        className={`text-sm font-medium ${
++                            completed
++                                ? 'text-slate-400 line-through'
++                                : 'text-slate-900'
++                        }`}
++                    >
++                        {task.title}
++                    </p>
++
++                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
++                        {task.tags.map((t) => (
++                            <button
++                                key={t.id}
++                                type="button"
++                                onClick={() =>
++                                    execToggleTag({
++                                        taskId: task.id,
++                                        tagId: t.id,
++                                        attach: false,
++                                    })
++                                }
++                                title="Remover tag"
++                                className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium"
++                                style={{
++                                    backgroundColor: `${t.color}20`,
++                                    color: t.color,
++                                }}
++                            >
++                                <span
++                                    className="size-1.5 rounded-full"
++                                    style={{ backgroundColor: t.color }}
++                                />
++                                {t.name}
++                            </button>
++                        ))}
++
++                        {availableTags.length > attachedIds.size && (
++                            <TagPicker
++                                availableTags={availableTags}
++                                attachedIds={attachedIds}
++                                onToggle={(tagId, attach) =>
++                                    execToggleTag({ taskId: task.id, tagId, attach })
++                                }
++                            />
++                        )}
++                    </div>
++
++                    {(task.plannedDate || !completed) && (
++                        <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">
++                            {task.plannedDate && (
++                                <span className="flex items-center gap-1">
++                                    <CalendarDays className="size-3.5" />
++                                    {task.plannedDate.toLocaleDateString(
++                                        'pt-BR',
++                                        { day: '2-digit', month: 'short' }
++                                    )}
++                                </span>
++                            )}
++
++                            {!completed && (
++                                <span className="text-slate-400">
++                                    Status: {STATUS_LABELS[task.status]}
++                                </span>
++                            )}
++                        </div>
++                    )}
++                </div>
++
++                <div className="flex shrink-0 items-center gap-1">
++                    <button
++                        type="button"
++                        onClick={handlePriority}
++                        disabled={isPending || completed}
++                        title="Prioridade máxima"
++                        className={
++                            task.isTopPriority
++                                ? 'text-amber-500'
++                                : 'text-slate-300 hover:text-amber-400'
++                        }
++                    >
++                        <Star
++                            className="size-4"
++                            fill={task.isTopPriority ? 'currentColor' : 'none'}
++                        />
++                    </button>
++
++                    {!completed && (
++                        <select
++                            value={task.status === 'DONE' ? 'TODAY' : task.status}
++                            onChange={(e) =>
++                                execStatus({
++                                    taskId: task.id,
++                                    status: e.target.value as
++                                        | 'BACKLOG'
++                                        | 'WEEK'
++                                        | 'TODAY'
++                                        | 'DOING',
++                                })
++                            }
++                            className="rounded-md border border-slate-200 bg-white px-1.5 py-1 text-[11px] text-slate-500 outline-none"
++                            aria-label="Alterar status (andamento)"
++                        >
++                            <option value="TODAY">{STATUS_LABELS.TODAY}</option>
++                            <option value="DOING">{STATUS_LABELS.DOING}</option>
++                            <option value="WEEK">{STATUS_LABELS.WEEK}</option>
++                        </select>
++                    )}
++
++                    <TaskActions
++                        taskId={task.id}
++                        title={task.title}
++                        description={task.description}
++                        time={task.plannedTime}
++                    />
++                </div>
++            </div>
++        </article>
++    )
++}
++
++function TagPicker({
++    availableTags,
++    attachedIds,
++    onToggle,
++}: {
++    availableTags: PersonalTag[]
++    attachedIds: Set<string>
++    onToggle: (tagId: string, attach: boolean) => void
++}) {
++    return (
++        <details className="relative inline-block">
++            <summary className="cursor-pointer list-none rounded-full border border-dashed border-slate-300 px-2 py-0.5 text-[11px] text-slate-400 hover:bg-slate-50">
++                + tag
++            </summary>
++
++            <div className="absolute left-0 top-full z-10 mt-1 flex w-40 flex-col gap-1 rounded-lg border border-slate-200 bg-white p-2 shadow-lg">
++                {availableTags.map((t) => {
++                    const active = attachedIds.has(t.id)
++                    return (
++                        <button
++                            key={t.id}
++                            type="button"
++                            onClick={() => onToggle(t.id, !active)}
++                            className={`flex items-center gap-2 rounded-md px-2 py-1 text-left text-xs ${
++                                active
++                                    ? 'bg-slate-50 font-medium text-slate-900'
++                                    : 'text-slate-600 hover:bg-slate-50'
++                            }`}
++                        >
++                            <span
++                                className="size-2 rounded-full"
++                                style={{ backgroundColor: t.color }}
++                            />
++                            {t.name}
++                        </button>
++                    )
++                })}
++            </div>
++        </details>
++    )
++}
+diff --git a/components/personal/personal-view.tsx b/components/personal/personal-view.tsx
+new file mode 100644
+index 0000000..8c641a1
+--- /dev/null
++++ b/components/personal/personal-view.tsx
+@@ -0,0 +1,183 @@
++'use client'
++
++import { Suspense, useMemo, useState } from 'react'
++import { Search } from 'lucide-react'
++
++import { PersonalTask, PersonalTag } from './personal-task-card'
++import { PersonalKanban } from './personal-kanban'
++import { PersonalList } from './personal-list'
++import { PersonalCalendar } from './personal-calendar'
++import {
++    PersonalFilters,
++    EMPTY_PERSONAL_FILTERS,
++    type PersonalFilterState,
++} from './personal-filters'
++import { NewPersonalTaskButton } from './new-personal-task-button'
++import { PersonalTagsManager } from './personal-tags-manager'
++import { PersonalQuickTags } from './personal-quick-tags'
++
++import { ViewSwitcher } from '@/components/shared/view-switcher'
++import { useViewMode } from '@/components/shared/use-view-mode'
++
++interface TagWithUsage extends PersonalTag {
++    usageCount: number
++}
++
++interface PersonalViewProps {
++    tasks: PersonalTask[]
++    availableTags: PersonalTag[]
++    allTagsWithUsage: TagWithUsage[]
++}
++
++/**
++ * `useViewMode` usa `useSearchParams`, exigindo Suspense boundary —
++ * mesmo padrão de board-view.tsx, inbox-view.tsx e study-view.tsx.
++ */
++export function PersonalView(props: PersonalViewProps) {
++    return (
++        <Suspense
++            fallback={
++                <PersonalKanban tasks={props.tasks} availableTags={props.availableTags} />
++            }
++        >
++            <PersonalViewInner {...props} />
++        </Suspense>
++    )
++}
++
++function PersonalViewInner({
++    tasks,
++    availableTags,
++    allTagsWithUsage,
++}: PersonalViewProps) {
++    const { view, setView, isMobile } = useViewMode()
++    const [search, setSearch] = useState('')
++    const [filters, setFilters] = useState<PersonalFilterState>(
++        EMPTY_PERSONAL_FILTERS
++    )
++
++    // "Tags rápidas": só as que já aparecem em alguma tarefa Pessoal
++    // carregada (opção 2 da auditoria) — derivado localmente, sem
++    // query nova.
++    const quickTags = useMemo(() => {
++        const seen = new Map<string, PersonalTag>()
++        for (const task of tasks) {
++            for (const t of task.tags) {
++                if (!seen.has(t.id)) seen.set(t.id, t)
++            }
++        }
++        return Array.from(seen.values()).sort((a, b) =>
++            a.name.localeCompare(b.name)
++        )
++    }, [tasks])
++
++    function toggleQuickTag(tagId: string) {
++        setFilters((current) => ({
++            ...current,
++            tagIds: current.tagIds.includes(tagId)
++                ? current.tagIds.filter((id) => id !== tagId)
++                : [...current.tagIds, tagId],
++        }))
++    }
++
++    const filteredTasks = useMemo(() => {
++        const term = search.trim().toLowerCase()
++
++        return tasks.filter((task) => {
++            if (term) {
++                const matchesTitle = task.title.toLowerCase().includes(term)
++                const matchesDescription = (task.description ?? '')
++                    .toLowerCase()
++                    .includes(term)
++                const matchesTag = task.tags.some((t) =>
++                    t.name.toLowerCase().includes(term)
++                )
++
++                if (!matchesTitle && !matchesDescription && !matchesTag) {
++                    return false
++                }
++            }
++
++            if (
++                filters.statuses.length > 0 &&
++                !filters.statuses.includes(
++                    task.status === 'BACKLOG' ? 'TODAY' : task.status
++                )
++            ) {
++                return false
++            }
++
++            if (
++                filters.priorities.length > 0 &&
++                !filters.priorities.includes(task.priority)
++            ) {
++                return false
++            }
++
++            if (filters.tagIds.length > 0) {
++                const taskTagIds = task.tags.map((t) => t.id)
++                if (!filters.tagIds.some((id) => taskTagIds.includes(id))) {
++                    return false
++                }
++            }
++
++            return true
++        })
++    }, [tasks, search, filters])
++
++    return (
++        <>
++            {/* TOOLBAR */}
++            <div className="mb-4 flex flex-col gap-3 border-t border-slate-200 pt-4 lg:flex-row lg:items-center lg:justify-between">
++                <ViewSwitcher view={view} onChange={setView} isMobile={isMobile} />
++
++                <div className="flex flex-1 flex-wrap justify-end gap-3">
++                    <div className="flex h-11 w-full max-w-[280px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-4">
++                        <Search className="size-4 shrink-0 text-slate-400" />
++                        <input
++                            type="text"
++                            value={search}
++                            onChange={(e) => setSearch(e.target.value)}
++                            placeholder="Buscar no pessoal..."
++                            className="h-full w-full bg-transparent text-base text-slate-700 outline-none placeholder:text-slate-400 sm:text-sm"
++                        />
++                    </div>
++
++                    <PersonalFilters
++                        value={filters}
++                        onChange={setFilters}
++                        availableTags={availableTags}
++                    />
++
++                    <PersonalTagsManager tags={allTagsWithUsage} />
++
++                    <NewPersonalTaskButton availableTags={availableTags} />
++                </div>
++            </div>
++
++            {/* TAGS RÁPIDAS */}
++            {quickTags.length > 0 && (
++                <div className="mb-6">
++                    <PersonalQuickTags
++                        tags={quickTags}
++                        selectedIds={filters.tagIds}
++                        onToggle={toggleQuickTag}
++                    />
++                </div>
++            )}
++
++            {/* CONTEÚDO */}
++            {view === 'board' && (
++                <PersonalKanban tasks={filteredTasks} availableTags={availableTags} />
++            )}
++
++            {view === 'list' && (
++                <PersonalList tasks={filteredTasks} availableTags={availableTags} />
++            )}
++
++            {view === 'calendar' && (
++                <PersonalCalendar tasks={filteredTasks} availableTags={availableTags} />
++            )}
++        </>
++    )
++}
+diff --git a/lib/personal/group.ts b/lib/personal/group.ts
+new file mode 100644
+index 0000000..f75e018
+--- /dev/null
++++ b/lib/personal/group.ts
+@@ -0,0 +1,81 @@
++export type PersonalGroup = 'routine' | 'health' | 'commitments' | 'completed'
++
++/**
++ * Convenção visual inicial (não é estrutura de dados real — é só um
++ * agrupamento por palavra-chave de nome de tag, único lugar do
++ * código que faz esse tipo de comparação). `tag.scope`/`tag.area`
++ * resolveria isso de forma real no futuro; até lá, isso é o melhor
++ * que dá pra fazer sem migration.
++ */
++const GROUP_KEYWORDS: Record<Exclude<PersonalGroup, 'completed'>, string[]> = {
++    health: ['saude', 'bem-estar', 'bem estar', 'treino', 'alimentacao'],
++    commitments: ['familia', 'vida social', 'financeiro', 'importante'],
++    routine: ['casa', 'organizacao', 'compras', 'autocuidado'],
++}
++
++/**
++ * Prioridade quando uma task tem tags de mais de um grupo — evita
++ * duplicar o card em duas colunas. Ordem: saúde > compromissos >
++ * rotina. Documentado aqui, não repetido em nenhum outro lugar.
++ */
++const GROUP_PRIORITY: Array<Exclude<PersonalGroup, 'completed'>> = [
++    'health',
++    'commitments',
++    'routine',
++]
++
++function normalize(value: string) {
++    return value
++        .toLowerCase()
++        .normalize('NFD')
++        .replace(/[\u0300-\u036f]/g, '')
++        .trim()
++}
++
++interface TaskForGrouping {
++    status: string
++    tags: Array<{ name: string }>
++}
++
++/**
++ * Único lugar do código que decide em qual coluna/grupo visual uma
++ * task pessoal aparece. Nunca espalhar essa comparação em outros
++ * componentes — sempre importar e usar esta função.
++ */
++export function getPersonalGroup(task: TaskForGrouping): PersonalGroup {
++    if (task.status === 'DONE') {
++        return 'completed'
++    }
++
++    const normalizedTagNames = task.tags.map((t) => normalize(t.name))
++
++    for (const group of GROUP_PRIORITY) {
++        const keywords = GROUP_KEYWORDS[group]
++
++        const matches = normalizedTagNames.some((tagName) =>
++            keywords.some((keyword) => tagName.includes(keyword))
++        )
++
++        if (matches) {
++            return group
++        }
++    }
++
++    // Sem tag suficiente para identificar o grupo → fallback em Rotina
++    // (não escondemos a task, e não criamos uma 5ª coluna "Outros").
++    return 'routine'
++}
++
++export const PERSONAL_GROUP_LABELS: Record<PersonalGroup, string> = {
++    routine: 'Rotina',
++    health: 'Saúde e bem-estar',
++    commitments: 'Compromissos',
++    completed: 'Concluído',
++}
++
++export const PERSONAL_GROUP_SUBTITLES: Record<PersonalGroup, string> = {
++    routine: 'Tarefas do dia a dia para uma vida mais organizada.',
++    health: 'Pequenas atitudes, grandes resultados.',
++    commitments: 'Pessoas, lugares e momentos que importam.',
++    completed: 'Suas tarefas pessoais finalizadas.',
++}

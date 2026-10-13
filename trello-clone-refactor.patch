@@ -1,0 +1,3731 @@
+diff --git a/app/(app)/board/actions.ts b/app/(app)/board/actions.ts
+index d5a6dba..9fae254 100644
+--- a/app/(app)/board/actions.ts
++++ b/app/(app)/board/actions.ts
+@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache'
+ import { db } from '@/db'
+ import { boardColumn } from '@/db/schema/column'
+ import { card } from '@/db/schema/card'
+-import { authActionClient } from '@/lib/safe-action'
++import { authBoardActionClient } from '@/lib/safe-action'
+ import { eq, max, and, asc, ne } from 'drizzle-orm'
+ import {
+     columnColorSchema,
+@@ -54,7 +54,7 @@ const moveCardSchema = z.object({
+     targetPosition: z.number().int().min(0),
+ })
+ 
+-export const createColumn = authActionClient
++export const createColumn = authBoardActionClient
+     .inputSchema(createColumnSchema)
+     .action(async ({ parsedInput, ctx }) => {
+         const [result] = await db
+@@ -74,7 +74,7 @@ export const createColumn = authActionClient
+         revalidatePath('/board')
+     })
+ 
+-export const updateColumn = authActionClient
++export const updateColumn = authBoardActionClient
+     .inputSchema(updateColumnSchema)
+     .action(async ({ parsedInput, ctx }) => {
+         const [col] = await db
+@@ -108,7 +108,7 @@ export const updateColumn = authActionClient
+         revalidatePath('/board')
+     })
+ 
+-export const deleteColumn = authActionClient
++export const deleteColumn = authBoardActionClient
+     .inputSchema(deleteColumnSchema)
+     .action(async ({ parsedInput, ctx }) => {
+         const [col] = await db
+@@ -129,7 +129,7 @@ export const deleteColumn = authActionClient
+         revalidatePath('/board')
+     })
+ 
+-export const reorderColumns = authActionClient
++export const reorderColumns = authBoardActionClient
+     .inputSchema(reorderColumnsSchema)
+     .action(async ({ parsedInput, ctx }) => {
+         await db.transaction(async (tx) => {
+@@ -164,7 +164,7 @@ export const reorderColumns = authActionClient
+         revalidatePath('/board')
+     })
+ 
+-export const createCard = authActionClient
++export const createCard = authBoardActionClient
+     .inputSchema(createCardSchema)
+     .action(async ({ parsedInput, ctx }) => {
+         const [col] = await db
+@@ -196,7 +196,7 @@ export const createCard = authActionClient
+         revalidatePath('/board')
+     })
+ 
+-export const updateCard = authActionClient
++export const updateCard = authBoardActionClient
+     .inputSchema(updateCardSchema)
+     .action(async ({ parsedInput, ctx }) => {
+         const [row] = await db
+@@ -221,7 +221,7 @@ export const updateCard = authActionClient
+         revalidatePath('/board')
+     })
+ 
+-export const deleteCard = authActionClient
++export const deleteCard = authBoardActionClient
+     .inputSchema(deleteCardSchema)
+     .action(async ({ parsedInput, ctx }) => {
+         const [row] = await db
+@@ -243,7 +243,7 @@ export const deleteCard = authActionClient
+         revalidatePath('/board')
+     })
+ 
+-export const moveCard = authActionClient
++export const moveCard = authBoardActionClient
+     .inputSchema(moveCardSchema)
+     .action(async ({ parsedInput, ctx }) => {
+         const { cardId, targetColumnId, targetPosition } = parsedInput
+diff --git a/app/(app)/hoje/_actions/complete-task.ts b/app/(app)/hoje/_actions/complete-task.ts
+index 3dcc2e2..aef053f 100644
+--- a/app/(app)/hoje/_actions/complete-task.ts
++++ b/app/(app)/hoje/_actions/complete-task.ts
+@@ -1,52 +1,46 @@
+ 'use server'
+ 
+ import { and, eq } from 'drizzle-orm'
+-import { headers } from 'next/headers'
+ import { revalidatePath } from 'next/cache'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ import { task } from '@/db/schema'
++import { authActionClient } from '@/lib/safe-action'
++import { completeTaskSchema } from '@/lib/validators/task'
+ 
+-type ReturnStatus = 'TODAY' | 'BACKLOG' | 'WEEK' | 'DOING'
++export const completeTask = authActionClient
++    .inputSchema(completeTaskSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const { taskId, completed, returnStatus } = parsedInput
+ 
+-export async function completeTask(
+-    taskId: string,
+-    completed: boolean,
+-    returnStatus: ReturnStatus = 'TODAY'
+-) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
++        if (completed) {
++            // Já estava concluída → volta para o status anterior informado
++            await db
++                .update(task)
++                .set({
++                    status: returnStatus,
++                    completedAt: null,
++                })
++                .where(
++                    and(eq(task.id, taskId), eq(task.userId, ctx.user.id))
++                )
++        } else {
++            // Ainda não concluída → conclui
++            await db
++                .update(task)
++                .set({
++                    status: 'DONE',
++                    completedAt: new Date(),
++                    isTopPriority: false,
++                })
++                .where(
++                    and(eq(task.id, taskId), eq(task.userId, ctx.user.id))
++                )
++        }
+ 
+-    if (completed) {
+-        // Já estava concluída → volta para o status anterior informado
+-        await db
+-            .update(task)
+-            .set({
+-                status: returnStatus,
+-                completedAt: null,
+-            })
+-            .where(and(eq(task.id, taskId), eq(task.userId, session.user.id)))
+-    } else {
+-        // Ainda não concluída → conclui
+-        await db
+-            .update(task)
+-            .set({
+-                status: 'DONE',
+-                completedAt: new Date(),
+-                isTopPriority: false,
+-            })
+-            .where(and(eq(task.id, taskId), eq(task.userId, session.user.id)))
+-    }
+-
+-    revalidatePath('/hoje')
+-    revalidatePath('/semana')
+-    revalidatePath('/board')
+-    revalidatePath('/estudos')
+-    revalidatePath('/pessoal')
+-}
++        revalidatePath('/hoje')
++        revalidatePath('/semana')
++        revalidatePath('/board')
++        revalidatePath('/estudos')
++        revalidatePath('/pessoal')
++    })
+diff --git a/app/(app)/hoje/_actions/create-task.ts b/app/(app)/hoje/_actions/create-task.ts
+index c7e0610..e6aec3e 100644
+--- a/app/(app)/hoje/_actions/create-task.ts
++++ b/app/(app)/hoje/_actions/create-task.ts
+@@ -1,78 +1,57 @@
+ 'use server'
+ 
+-import { headers } from 'next/headers'
+ import { revalidatePath } from 'next/cache'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ import { task } from '@/db/schema/task'
++import { authActionClient } from '@/lib/safe-action'
++import { createTaskSchema } from '@/lib/validators/task'
+ 
+-interface CreateTaskInput {
+-    title: string
+-    destination: 'TODAY' | 'INBOX'
+-    area?: 'WORK' | 'STUDIES' | 'PERSONAL'
+-    priority?: 'LOW' | 'MEDIUM' | 'HIGH'
+-    plannedDate?: string
+-    description?: string
+-    plannedTime?: string
+-}
++export const createTask = authActionClient
++    .inputSchema(createTaskSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        if (parsedInput.destination === 'INBOX') {
++            await db.insert(task).values({
++                userId: ctx.user.id,
++                title: parsedInput.title,
++                description: parsedInput.description?.trim() || null,
++                area: 'INBOX',
++                status: 'BACKLOG',
++                priority: 'MEDIUM',
++                plannedDate: null,
++                plannedTime: null,
++            })
+ 
+-export async function createTask(input: CreateTaskInput) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
+-
+-    if (!input.title.trim()) {
+-        throw new Error('O título da tarefa é obrigatório')
+-    }
+-
+-    if (input.destination === 'INBOX') {
+-        await db.insert(task).values({
+-            userId: session.user.id,
+-            title: input.title.trim(),
+-            area: 'INBOX',
+-            status: 'BACKLOG',
+-            priority: 'MEDIUM',
+-            plannedDate: null,
+-            plannedTime: null,
+-        })
++            revalidatePath('/hoje')
++            revalidatePath('/inbox')
+ 
+-        revalidatePath('/hoje')
+-        revalidatePath('/inbox')
+-
+-        return
+-    }
++            return
++        }
+ 
+-    if (!input.area || !input.priority || !input.plannedDate) {
+-        throw new Error('Preencha os dados da tarefa')
+-    }
++        const [year, month, day] = parsedInput.plannedDate
++            .split('-')
++            .map(Number)
+ 
+-    const [year, month, day] = input.plannedDate.split('-').map(Number)
++        const plannedDate = new Date(year, month - 1, day)
+ 
+-    const plannedDate = new Date(year, month - 1, day)
++        const today = new Date()
+ 
+-    const today = new Date()
++        today.setHours(0, 0, 0, 0)
++        plannedDate.setHours(0, 0, 0, 0)
+ 
+-    today.setHours(0, 0, 0, 0)
+-    plannedDate.setHours(0, 0, 0, 0)
++        const isToday = plannedDate.getTime() === today.getTime()
+ 
+-    const isToday = plannedDate.getTime() === today.getTime()
++        await db.insert(task).values({
++            userId: ctx.user.id,
++            title: parsedInput.title,
++            description: parsedInput.description?.trim() || null,
++            area: parsedInput.area,
++            priority: parsedInput.priority,
++            status: isToday ? 'TODAY' : 'WEEK',
++            plannedDate,
++            plannedTime: parsedInput.plannedTime || null,
++        })
+ 
+-    await db.insert(task).values({
+-        userId: session.user.id,
+-        title: input.title.trim(),
+-        description: input.description?.trim() || null,
+-        area: input.area,
+-        priority: input.priority,
+-        status: isToday ? 'TODAY' : 'WEEK',
+-        plannedDate,
+-        plannedTime: input.plannedTime || null,
++        revalidatePath('/hoje')
++        revalidatePath('/semana')
+     })
+-
+-    revalidatePath('/hoje')
+-    revalidatePath('/semana')
+-}
+diff --git a/app/(app)/hoje/_actions/delete-task.ts b/app/(app)/hoje/_actions/delete-task.ts
+index 25679ee..cae8a03 100644
+--- a/app/(app)/hoje/_actions/delete-task.ts
++++ b/app/(app)/hoje/_actions/delete-task.ts
+@@ -1,27 +1,28 @@
+ 'use server'
+ 
+-import { eq } from 'drizzle-orm'
+-import { headers } from 'next/headers'
++import { and, eq } from 'drizzle-orm'
+ import { revalidatePath } from 'next/cache'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ import { task } from '@/db/schema'
++import { authActionClient } from '@/lib/safe-action'
++import { taskIdSchema } from '@/lib/validators/task'
+ 
+-export async function deleteTask(taskId: string) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
++export const deleteTask = authActionClient
++    .inputSchema(taskIdSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        await db
++            .delete(task)
++            .where(
++                and(
++                    eq(task.id, parsedInput.taskId),
++                    eq(task.userId, ctx.user.id)
++                )
++            )
+ 
+-    await db.delete(task).where(eq(task.id, taskId))
+-
+-    revalidatePath('/hoje')
+-    revalidatePath('/semana')
+-    revalidatePath('/inbox')
+-    revalidatePath('/estudos')
+-    revalidatePath('/pessoal')
+-}
++        revalidatePath('/hoje')
++        revalidatePath('/semana')
++        revalidatePath('/inbox')
++        revalidatePath('/estudos')
++        revalidatePath('/pessoal')
++    })
+diff --git a/app/(app)/hoje/_actions/finish-focus.ts b/app/(app)/hoje/_actions/finish-focus.ts
+index 24535d9..0696251 100644
+--- a/app/(app)/hoje/_actions/finish-focus.ts
++++ b/app/(app)/hoje/_actions/finish-focus.ts
+@@ -1,57 +1,53 @@
+ 'use server'
+ 
+ import { and, eq, isNull } from 'drizzle-orm'
+-import { headers } from 'next/headers'
+ import { revalidatePath } from 'next/cache'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ import { focusSession } from '@/db/schema'
++import { authActionClient } from '@/lib/safe-action'
++import { focusSessionIdSchema } from '@/lib/validators/focus'
++
++export const finishFocus = authActionClient
++    .inputSchema(focusSessionIdSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const [focus] = await db
++            .select()
++            .from(focusSession)
++            .where(
++                and(
++                    eq(focusSession.id, parsedInput.sessionId),
++                    eq(focusSession.userId, ctx.user.id),
++                    isNull(focusSession.endedAt)
++                )
++            )
++            .limit(1)
+ 
+-export async function finishFocus(sessionId: string) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
++        if (!focus) {
++            return
++        }
++
++        const endedAt = new Date()
+ 
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
+-
+-    const [focus] = await db
+-        .select()
+-        .from(focusSession)
+-        .where(
+-            and(
+-                eq(focusSession.id, sessionId),
+-                eq(focusSession.userId, session.user.id),
+-                isNull(focusSession.endedAt)
++        let durationSeconds = focus.accumulatedSeconds
++
++        if (!focus.pausedAt) {
++            durationSeconds += Math.max(
++                0,
++                Math.floor(
++                    (endedAt.getTime() - focus.startedAt.getTime()) / 1000
++                )
+             )
+-        )
+-        .limit(1)
+-
+-    if (!focus) {
+-        return
+-    }
+-
+-    const endedAt = new Date()
+-
+-    let durationSeconds = focus.accumulatedSeconds
+-
+-    if (!focus.pausedAt) {
+-        durationSeconds += Math.max(
+-            0,
+-            Math.floor((endedAt.getTime() - focus.startedAt.getTime()) / 1000)
+-        )
+-    }
+-
+-    await db
+-        .update(focusSession)
+-        .set({
+-            endedAt,
+-            durationSeconds,
+-            pausedAt: null,
+-        })
+-        .where(eq(focusSession.id, sessionId))
+-
+-    revalidatePath('/hoje')
+-}
++        }
++
++        await db
++            .update(focusSession)
++            .set({
++                endedAt,
++                durationSeconds,
++                pausedAt: null,
++            })
++            .where(eq(focusSession.id, parsedInput.sessionId))
++
++        revalidatePath('/hoje')
++    })
+diff --git a/app/(app)/hoje/_actions/pause-focus.ts b/app/(app)/hoje/_actions/pause-focus.ts
+index bbaf746..555ad78 100644
+--- a/app/(app)/hoje/_actions/pause-focus.ts
++++ b/app/(app)/hoje/_actions/pause-focus.ts
+@@ -1,52 +1,46 @@
+ 'use server'
+ 
+ import { and, eq, isNull } from 'drizzle-orm'
+-import { headers } from 'next/headers'
+ import { revalidatePath } from 'next/cache'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ import { focusSession } from '@/db/schema'
+-
+-export async function pauseFocus(sessionId: string) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
+-
+-    const [focus] = await db
+-        .select()
+-        .from(focusSession)
+-        .where(
+-            and(
+-                eq(focusSession.id, sessionId),
+-                eq(focusSession.userId, session.user.id),
+-                isNull(focusSession.endedAt)
++import { authActionClient } from '@/lib/safe-action'
++import { focusSessionIdSchema } from '@/lib/validators/focus'
++
++export const pauseFocus = authActionClient
++    .inputSchema(focusSessionIdSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const [focus] = await db
++            .select()
++            .from(focusSession)
++            .where(
++                and(
++                    eq(focusSession.id, parsedInput.sessionId),
++                    eq(focusSession.userId, ctx.user.id),
++                    isNull(focusSession.endedAt)
++                )
+             )
+-        )
+-        .limit(1)
++            .limit(1)
+ 
+-    if (!focus || focus.pausedAt) {
+-        return
+-    }
++        if (!focus || focus.pausedAt) {
++            return
++        }
+ 
+-    const now = new Date()
++        const now = new Date()
+ 
+-    const currentSeconds = Math.max(
+-        0,
+-        Math.floor((now.getTime() - focus.startedAt.getTime()) / 1000)
+-    )
++        const currentSeconds = Math.max(
++            0,
++            Math.floor((now.getTime() - focus.startedAt.getTime()) / 1000)
++        )
+ 
+-    await db
+-        .update(focusSession)
+-        .set({
+-            pausedAt: now,
+-            accumulatedSeconds: focus.accumulatedSeconds + currentSeconds,
+-        })
+-        .where(eq(focusSession.id, sessionId))
++        await db
++            .update(focusSession)
++            .set({
++                pausedAt: now,
++                accumulatedSeconds: focus.accumulatedSeconds + currentSeconds,
++            })
++            .where(eq(focusSession.id, parsedInput.sessionId))
+ 
+-    revalidatePath('/hoje')
+-}
++        revalidatePath('/hoje')
++    })
+diff --git a/app/(app)/hoje/_actions/resume-focus.ts b/app/(app)/hoje/_actions/resume-focus.ts
+index d67f755..cdc57c5 100644
+--- a/app/(app)/hoje/_actions/resume-focus.ts
++++ b/app/(app)/hoje/_actions/resume-focus.ts
+@@ -1,45 +1,39 @@
+ 'use server'
+ 
+ import { and, eq, isNull } from 'drizzle-orm'
+-import { headers } from 'next/headers'
+ import { revalidatePath } from 'next/cache'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ import { focusSession } from '@/db/schema'
+-
+-export async function resumeFocus(sessionId: string) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
+-
+-    const [focus] = await db
+-        .select()
+-        .from(focusSession)
+-        .where(
+-            and(
+-                eq(focusSession.id, sessionId),
+-                eq(focusSession.userId, session.user.id),
+-                isNull(focusSession.endedAt)
++import { authActionClient } from '@/lib/safe-action'
++import { focusSessionIdSchema } from '@/lib/validators/focus'
++
++export const resumeFocus = authActionClient
++    .inputSchema(focusSessionIdSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const [focus] = await db
++            .select()
++            .from(focusSession)
++            .where(
++                and(
++                    eq(focusSession.id, parsedInput.sessionId),
++                    eq(focusSession.userId, ctx.user.id),
++                    isNull(focusSession.endedAt)
++                )
+             )
+-        )
+-        .limit(1)
++            .limit(1)
+ 
+-    if (!focus || !focus.pausedAt) {
+-        return
+-    }
++        if (!focus || !focus.pausedAt) {
++            return
++        }
+ 
+-    await db
+-        .update(focusSession)
+-        .set({
+-            startedAt: new Date(),
+-            pausedAt: null,
+-        })
+-        .where(eq(focusSession.id, sessionId))
++        await db
++            .update(focusSession)
++            .set({
++                startedAt: new Date(),
++                pausedAt: null,
++            })
++            .where(eq(focusSession.id, parsedInput.sessionId))
+ 
+-    revalidatePath('/hoje')
+-}
++        revalidatePath('/hoje')
++    })
+diff --git a/app/(app)/hoje/_actions/start-focus.ts b/app/(app)/hoje/_actions/start-focus.ts
+index 534217c..a6558e1 100644
+--- a/app/(app)/hoje/_actions/start-focus.ts
++++ b/app/(app)/hoje/_actions/start-focus.ts
+@@ -1,43 +1,59 @@
+ 'use server'
+ 
+ import { and, eq, isNull } from 'drizzle-orm'
+-import { headers } from 'next/headers'
++import { revalidatePath } from 'next/cache'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+-import { focusSession } from '@/db/schema'
+-
+-export async function startFocus(taskId: string) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
+-
+-    const activeSession = await db
+-        .select()
+-        .from(focusSession)
+-        .where(
+-            and(
+-                eq(focusSession.userId, session.user.id),
+-                isNull(focusSession.endedAt)
+-            )
+-        )
+-        .limit(1)
+-
+-    if (activeSession.length > 0) {
+-        return activeSession[0]
+-    }
+-
+-    const [createdSession] = await db
+-        .insert(focusSession)
+-        .values({
+-            userId: session.user.id,
+-            taskId,
++import { focusSession, task } from '@/db/schema'
++import { authActionClient } from '@/lib/safe-action'
++import { startFocusSchema } from '@/lib/validators/focus'
++
++export const startFocus = authActionClient
++    .inputSchema(startFocusSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const createdSession = await db.transaction(async (tx) => {
++            const [ownedTask] = await tx
++                .select({ id: task.id })
++                .from(task)
++                .where(
++                    and(
++                        eq(task.id, parsedInput.taskId),
++                        eq(task.userId, ctx.user.id)
++                    )
++                )
++                .limit(1)
++
++            if (!ownedTask) {
++                throw new Error('Tarefa não encontrada.')
++            }
++
++            const activeSession = await tx
++                .select()
++                .from(focusSession)
++                .where(
++                    and(
++                        eq(focusSession.userId, ctx.user.id),
++                        isNull(focusSession.endedAt)
++                    )
++                )
++                .limit(1)
++
++            if (activeSession.length > 0) {
++                return activeSession[0]
++            }
++
++            const [inserted] = await tx
++                .insert(focusSession)
++                .values({
++                    userId: ctx.user.id,
++                    taskId: parsedInput.taskId,
++                })
++                .returning()
++
++            return inserted
+         })
+-        .returning()
+ 
+-    return createdSession
+-}
++        revalidatePath('/hoje')
++
++        return createdSession
++    })
+diff --git a/app/(app)/hoje/_actions/toggle-top-priority.ts b/app/(app)/hoje/_actions/toggle-top-priority.ts
+index 112368f..06ec28c 100644
+--- a/app/(app)/hoje/_actions/toggle-top-priority.ts
++++ b/app/(app)/hoje/_actions/toggle-top-priority.ts
+@@ -1,45 +1,43 @@
+ 'use server'
+ 
+-import { headers } from 'next/headers'
+ import { revalidatePath } from 'next/cache'
+ import { and, eq } from 'drizzle-orm'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ import { task } from '@/db/schema/task'
+-
+-export async function toggleTopPriority(taskId: string, currentValue: boolean) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
+-
+-    if (!currentValue) {
+-        const priorities = await db
+-            .select()
+-            .from(task)
+-            .where(
+-                and(
+-                    eq(task.userId, session.user.id),
+-                    eq(task.status, 'TODAY'),
+-                    eq(task.isTopPriority, true)
++import { authActionClient } from '@/lib/safe-action'
++import { toggleTopPrioritySchema } from '@/lib/validators/task'
++
++export const toggleTopPriority = authActionClient
++    .inputSchema(toggleTopPrioritySchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const { taskId, currentValue } = parsedInput
++
++        if (!currentValue) {
++            const priorities = await db
++                .select()
++                .from(task)
++                .where(
++                    and(
++                        eq(task.userId, ctx.user.id),
++                        eq(task.status, 'TODAY'),
++                        eq(task.isTopPriority, true)
++                    )
+                 )
+-            )
+ 
+-        if (priorities.length >= 3) {
+-            throw new Error('Você já possui 3 prioridades para hoje.')
++            if (priorities.length >= 3) {
++                throw new Error('Você já possui 3 prioridades para hoje.')
++            }
+         }
+-    }
+ 
+-    await db
+-        .update(task)
+-        .set({
+-            isTopPriority: !currentValue,
+-        })
+-        .where(and(eq(task.id, taskId), eq(task.userId, session.user.id)))
++        await db
++            .update(task)
++            .set({
++                isTopPriority: !currentValue,
++            })
++            .where(
++                and(eq(task.id, taskId), eq(task.userId, ctx.user.id))
++            )
+ 
+-    revalidatePath('/hoje')
+-}
++        revalidatePath('/hoje')
++    })
+diff --git a/app/(app)/hoje/_actions/update-task.ts b/app/(app)/hoje/_actions/update-task.ts
+index 3444a80..0d362b3 100644
+--- a/app/(app)/hoje/_actions/update-task.ts
++++ b/app/(app)/hoje/_actions/update-task.ts
+@@ -1,41 +1,33 @@
+ 'use server'
+ 
+ import { and, eq } from 'drizzle-orm'
+-import { headers } from 'next/headers'
+ import { revalidatePath } from 'next/cache'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ import { task } from '@/db/schema'
++import { authActionClient } from '@/lib/safe-action'
++import { updateTaskSchema } from '@/lib/validators/task'
+ 
+-interface UpdateTaskInput {
+-    taskId: string
+-    title: string
+-    description?: string
+-    plannedTime?: string
+-}
++export const updateTask = authActionClient
++    .inputSchema(updateTaskSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        await db
++            .update(task)
++            .set({
++                title: parsedInput.title,
++                description: parsedInput.description?.trim() || null,
++                plannedTime: parsedInput.plannedTime || null,
++            })
++            .where(
++                and(
++                    eq(task.id, parsedInput.taskId),
++                    eq(task.userId, ctx.user.id)
++                )
++            )
+ 
+-export async function updateTask(input: UpdateTaskInput) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
++        revalidatePath('/hoje')
++        revalidatePath('/semana')
++        revalidatePath('/inbox')
++        revalidatePath('/estudos')
++        revalidatePath('/pessoal')
+     })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
+-
+-    await db
+-        .update(task)
+-        .set({
+-            title: input.title.trim(),
+-            description: input.description?.trim() || null,
+-            plannedTime: input.plannedTime || null,
+-        })
+-        .where(and(eq(task.id, input.taskId), eq(task.userId, session.user.id)))
+-
+-    revalidatePath('/hoje')
+-    revalidatePath('/semana')
+-    revalidatePath('/inbox')
+-    revalidatePath('/estudos')
+-    revalidatePath('/pessoal')
+-}
+diff --git a/app/(app)/inbox/_actions/inbox-crud.ts b/app/(app)/inbox/_actions/inbox-crud.ts
+new file mode 100644
+index 0000000..7c938d2
+--- /dev/null
++++ b/app/(app)/inbox/_actions/inbox-crud.ts
+@@ -0,0 +1,208 @@
++'use server'
++
++import { and, eq, inArray } from 'drizzle-orm'
++import { revalidatePath } from 'next/cache'
++
++import { db } from '@/db'
++import { task } from '@/db/schema/task'
++import { tag } from '@/db/schema/tag'
++import { taskTag } from '@/db/schema/task-tag'
++import { authActionClient } from '@/lib/safe-action'
++import {
++    createInboxTaskSchema,
++    inboxTaskIdSchema,
++    moveInboxTaskSchema,
++    updateInboxTaskSchema,
++} from '@/lib/validators/inbox'
++
++export const createInboxTask = authActionClient
++    .inputSchema(createInboxTaskSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const { title, description, priority, plannedDate, tagIds } =
++            parsedInput
++
++        const [createdTask] = await db
++            .insert(task)
++            .values({
++                userId: ctx.user.id,
++                title,
++                description: description?.trim() || null,
++                area: 'INBOX',
++                status: 'BACKLOG',
++                priority,
++                plannedDate: plannedDate
++                    ? new Date(`${plannedDate}T00:00:00`)
++                    : null,
++            })
++            .returning({
++                id: task.id,
++            })
++
++        if (tagIds.length > 0) {
++            const validTags = await db
++                .select({
++                    id: tag.id,
++                })
++                .from(tag)
++                .where(
++                    and(
++                        eq(tag.userId, ctx.user.id),
++                        inArray(tag.id, tagIds)
++                    )
++                )
++
++            if (validTags.length > 0) {
++                await db.insert(taskTag).values(
++                    validTags.map((item) => ({
++                        taskId: createdTask.id,
++                        tagId: item.id,
++                    }))
++                )
++            }
++        }
++
++        revalidatePath('/inbox')
++    })
++
++export const updateInboxTask = authActionClient
++    .inputSchema(updateInboxTaskSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const { taskId, title, description, priority, plannedDate, tagIds } =
++            parsedInput
++
++        const existingTask = await db
++            .select({
++                id: task.id,
++            })
++            .from(task)
++            .where(
++                and(
++                    eq(task.id, taskId),
++                    eq(task.userId, ctx.user.id),
++                    eq(task.area, 'INBOX')
++                )
++            )
++            .limit(1)
++
++        if (existingTask.length === 0) {
++            throw new Error('Tarefa não encontrada.')
++        }
++
++        await db
++            .update(task)
++            .set({
++                title,
++                description: description?.trim() || null,
++                priority,
++                plannedDate: plannedDate
++                    ? new Date(`${plannedDate}T00:00:00`)
++                    : null,
++            })
++            .where(and(eq(task.id, taskId), eq(task.userId, ctx.user.id)))
++
++        // Remove as tags atuais da tarefa
++        await db.delete(taskTag).where(eq(taskTag.taskId, taskId))
++
++        // Adiciona novamente as tags selecionadas
++        if (tagIds.length > 0) {
++            const validTags = await db
++                .select({
++                    id: tag.id,
++                })
++                .from(tag)
++                .where(
++                    and(
++                        eq(tag.userId, ctx.user.id),
++                        inArray(tag.id, tagIds)
++                    )
++                )
++
++            if (validTags.length > 0) {
++                await db.insert(taskTag).values(
++                    validTags.map((item) => ({
++                        taskId,
++                        tagId: item.id,
++                    }))
++                )
++            }
++        }
++
++        revalidatePath('/inbox')
++    })
++
++export const deleteInboxTask = authActionClient
++    .inputSchema(inboxTaskIdSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        await db
++            .delete(task)
++            .where(
++                and(
++                    eq(task.id, parsedInput.taskId),
++                    eq(task.userId, ctx.user.id),
++                    eq(task.area, 'INBOX')
++                )
++            )
++
++        revalidatePath('/inbox')
++    })
++
++export const completeInboxTask = authActionClient
++    .inputSchema(inboxTaskIdSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const [currentTask] = await db
++            .select({
++                id: task.id,
++                completedAt: task.completedAt,
++            })
++            .from(task)
++            .where(
++                and(
++                    eq(task.id, parsedInput.taskId),
++                    eq(task.userId, ctx.user.id),
++                    eq(task.area, 'INBOX')
++                )
++            )
++            .limit(1)
++
++        if (!currentTask) {
++            throw new Error('Tarefa não encontrada.')
++        }
++
++        const isCompleting = !currentTask.completedAt
++
++        await db
++            .update(task)
++            .set(
++                isCompleting
++                    ? { completedAt: new Date(), status: 'DONE' }
++                    : { completedAt: null, status: 'BACKLOG' }
++            )
++            .where(
++                and(
++                    eq(task.id, parsedInput.taskId),
++                    eq(task.userId, ctx.user.id),
++                    eq(task.area, 'INBOX')
++                )
++            )
++
++        revalidatePath('/inbox')
++    })
++
++export const moveInboxTask = authActionClient
++    .inputSchema(moveInboxTaskSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        await db
++            .update(task)
++            .set({
++                inboxStage: parsedInput.inboxStage,
++            })
++            .where(
++                and(
++                    eq(task.id, parsedInput.taskId),
++                    eq(task.userId, ctx.user.id),
++                    eq(task.area, 'INBOX')
++                )
++            )
++
++        revalidatePath('/inbox')
++    })
+diff --git a/app/(app)/inbox/_actions/organize-inbox-task.ts b/app/(app)/inbox/_actions/organize-inbox-task.ts
+index 2261be9..2f134fd 100644
+--- a/app/(app)/inbox/_actions/organize-inbox-task.ts
++++ b/app/(app)/inbox/_actions/organize-inbox-task.ts
+@@ -1,86 +1,69 @@
+ 'use server'
+ 
+-import { headers } from 'next/headers'
+ import { revalidatePath } from 'next/cache'
+ import { and, eq } from 'drizzle-orm'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ import { task } from '@/db/schema/task'
++import { authActionClient } from '@/lib/safe-action'
++import { organizeInboxTaskSchema } from '@/lib/validators/inbox'
+ 
+-type Destination =
+-    | 'TODAY_WORK'
+-    | 'TODAY_STUDIES'
+-    | 'TODAY_PERSONAL'
+-    | 'WORK'
+-    | 'STUDIES'
+-    | 'PERSONAL'
++export const organizeInboxTask = authActionClient
++    .inputSchema(organizeInboxTaskSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const today = new Date()
++        today.setHours(0, 0, 0, 0)
+ 
+-export async function organizeInboxTask(
+-    taskId: string,
+-    destination: Destination
+-) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
+-
+-    const today = new Date()
+-    today.setHours(0, 0, 0, 0)
++        const values = {
++            TODAY_WORK: {
++                area: 'WORK' as const,
++                status: 'TODAY' as const,
++                plannedDate: today,
++            },
+ 
+-    const values = {
+-        TODAY_WORK: {
+-            area: 'WORK' as const,
+-            status: 'TODAY' as const,
+-            plannedDate: today,
+-        },
++            TODAY_STUDIES: {
++                area: 'STUDIES' as const,
++                status: 'TODAY' as const,
++                plannedDate: today,
++            },
+ 
+-        TODAY_STUDIES: {
+-            area: 'STUDIES' as const,
+-            status: 'TODAY' as const,
+-            plannedDate: today,
+-        },
++            TODAY_PERSONAL: {
++                area: 'PERSONAL' as const,
++                status: 'TODAY' as const,
++                plannedDate: today,
++            },
+ 
+-        TODAY_PERSONAL: {
+-            area: 'PERSONAL' as const,
+-            status: 'TODAY' as const,
+-            plannedDate: today,
+-        },
++            WORK: {
++                area: 'WORK' as const,
++                status: 'BACKLOG' as const,
++                plannedDate: null,
++            },
+ 
+-        WORK: {
+-            area: 'WORK' as const,
+-            status: 'BACKLOG' as const,
+-            plannedDate: null,
+-        },
++            STUDIES: {
++                area: 'STUDIES' as const,
++                status: 'BACKLOG' as const,
++                plannedDate: null,
++            },
+ 
+-        STUDIES: {
+-            area: 'STUDIES' as const,
+-            status: 'BACKLOG' as const,
+-            plannedDate: null,
+-        },
++            PERSONAL: {
++                area: 'PERSONAL' as const,
++                status: 'BACKLOG' as const,
++                plannedDate: null,
++            },
++        }
+ 
+-        PERSONAL: {
+-            area: 'PERSONAL' as const,
+-            status: 'BACKLOG' as const,
+-            plannedDate: null,
+-        },
+-    }
+-
+-    await db
+-        .update(task)
+-        .set(values[destination])
+-        .where(
+-            and(
+-                eq(task.id, taskId),
+-                eq(task.userId, session.user.id),
+-                eq(task.area, 'INBOX')
++        await db
++            .update(task)
++            .set(values[parsedInput.destination])
++            .where(
++                and(
++                    eq(task.id, parsedInput.taskId),
++                    eq(task.userId, ctx.user.id),
++                    eq(task.area, 'INBOX')
++                )
+             )
+-        )
+ 
+-    revalidatePath('/inbox')
+-    revalidatePath('/hoje')
+-    revalidatePath('/semana')
+-}
++        revalidatePath('/inbox')
++        revalidatePath('/hoje')
++        revalidatePath('/semana')
++    })
+diff --git a/app/(app)/inbox/page.tsx b/app/(app)/inbox/page.tsx
+index d7783f2..ab1411b 100644
+--- a/app/(app)/inbox/page.tsx
++++ b/app/(app)/inbox/page.tsx
+@@ -89,7 +89,16 @@ export default async function InboxPage() {
+         tagsByTask.set(row.taskId, current);
+     }
+ 
+-    const total = inboxTasks.length;
++    const startOfToday = new Date();
++    startOfToday.setHours(0, 0, 0, 0);
++
++    const capturedToday = inboxTasks.filter(
++        (item) => item.createdAt >= startOfToday
++    ).length;
++
++    const pendingToOrganize = inboxTasks.filter(
++        (item) => item.inboxStage !== "ORGANIZED"
++    ).length;
+ 
+     return (
+         <div className="h-full overflow-y-auto bg-[#fbfcff]">
+@@ -128,7 +137,7 @@ export default async function InboxPage() {
+                         <InboxStatCard
+                             icon={<Inbox className="size-5 text-blue-600" />}
+                             title="Capturadas hoje"
+-                            value={total}
++                            value={capturedToday}
+                             description="novos itens"
+                         />
+ 
+@@ -144,7 +153,7 @@ export default async function InboxPage() {
+                         <InboxStatCard
+                             icon={<AlertCircle className="size-5 text-rose-500" />}
+                             title="Pendentes de organizar"
+-                            value={total}
++                            value={pendingToOrganize}
+                             description="aguardando revisão"
+                         />
+                     </div>
+diff --git a/app/(app)/semana/_actions/create-week-plan.ts b/app/(app)/semana/_actions/create-week-plan.ts
+index f38460f..3db9677 100644
+--- a/app/(app)/semana/_actions/create-week-plan.ts
++++ b/app/(app)/semana/_actions/create-week-plan.ts
+@@ -1,90 +1,77 @@
+ 'use server'
+ 
+-import { headers } from 'next/headers'
+ import { revalidatePath } from 'next/cache'
+ import { and, eq } from 'drizzle-orm'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ 
+ import { weekGoal } from '@/db/schema/week-goal'
+ import { weekHabit } from '@/db/schema/week-habit'
+-
+-interface CreateWeekPlanInput {
+-    weekStart: string
+-
+-    goals: string[]
+-
+-    habits: {
+-        title: string
+-        targetDays: number
+-    }[]
+-}
+-
+-export async function createWeekPlan(input: CreateWeekPlanInput) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
+-
+-    const [year, month, day] = input.weekStart.split('-').map(Number)
+-
+-    const weekStart = new Date(year, month - 1, day)
+-
+-    weekStart.setHours(0, 0, 0, 0)
+-
+-    const goals = input.goals.map((goal) => goal.trim()).filter(Boolean)
+-
+-    const habits = input.habits
+-        .map((habit) => ({
+-            title: habit.title.trim(),
+-            targetDays: habit.targetDays,
+-        }))
+-        .filter((habit) => habit.title)
+-
+-    await db.transaction(async (tx) => {
+-        await tx
+-            .delete(weekGoal)
+-            .where(
+-                and(
+-                    eq(weekGoal.userId, session.user.id),
+-                    eq(weekGoal.weekStart, weekStart)
++import { authActionClient } from '@/lib/safe-action'
++import { createWeekPlanSchema } from '@/lib/validators/week'
++
++export const createWeekPlan = authActionClient
++    .inputSchema(createWeekPlanSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const [year, month, day] = parsedInput.weekStart
++            .split('-')
++            .map(Number)
++
++        const weekStart = new Date(year, month - 1, day)
++
++        weekStart.setHours(0, 0, 0, 0)
++
++        const goals = parsedInput.goals
++            .map((goal) => goal.trim())
++            .filter(Boolean)
++
++        const habits = parsedInput.habits
++            .map((habit) => ({
++                title: habit.title.trim(),
++                targetDays: habit.targetDays,
++            }))
++            .filter((habit) => habit.title)
++
++        await db.transaction(async (tx) => {
++            await tx
++                .delete(weekGoal)
++                .where(
++                    and(
++                        eq(weekGoal.userId, ctx.user.id),
++                        eq(weekGoal.weekStart, weekStart)
++                    )
+                 )
+-            )
+ 
+-        await tx
+-            .delete(weekHabit)
+-            .where(
+-                and(
+-                    eq(weekHabit.userId, session.user.id),
+-                    eq(weekHabit.weekStart, weekStart)
++            await tx
++                .delete(weekHabit)
++                .where(
++                    and(
++                        eq(weekHabit.userId, ctx.user.id),
++                        eq(weekHabit.weekStart, weekStart)
++                    )
+                 )
+-            )
+ 
+-        if (goals.length > 0) {
+-            await tx.insert(weekGoal).values(
+-                goals.map((title) => ({
+-                    userId: session.user.id,
+-                    title,
+-                    weekStart,
+-                }))
+-            )
+-        }
++            if (goals.length > 0) {
++                await tx.insert(weekGoal).values(
++                    goals.map((title) => ({
++                        userId: ctx.user.id,
++                        title,
++                        weekStart,
++                    }))
++                )
++            }
++
++            if (habits.length > 0) {
++                await tx.insert(weekHabit).values(
++                    habits.map((habit) => ({
++                        userId: ctx.user.id,
++                        title: habit.title,
++                        weekStart,
++                        targetDays: habit.targetDays,
++                    }))
++                )
++            }
++        })
+ 
+-        if (habits.length > 0) {
+-            await tx.insert(weekHabit).values(
+-                habits.map((habit) => ({
+-                    userId: session.user.id,
+-                    title: habit.title,
+-                    weekStart,
+-                    targetDays: habit.targetDays,
+-                }))
+-            )
+-        }
++        revalidatePath('/semana')
+     })
+-
+-    revalidatePath('/semana')
+-}
+diff --git a/app/(app)/semana/_actions/create-week-task.ts b/app/(app)/semana/_actions/create-week-task.ts
+index 2666106..c0ffa40 100644
+--- a/app/(app)/semana/_actions/create-week-task.ts
++++ b/app/(app)/semana/_actions/create-week-task.ts
+@@ -1,53 +1,37 @@
+ 'use server'
+ 
+-import { headers } from 'next/headers'
+ import { revalidatePath } from 'next/cache'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ import { task } from '@/db/schema/task'
++import { authActionClient } from '@/lib/safe-action'
++import { createWeekTaskSchema } from '@/lib/validators/week'
+ 
+-interface CreateWeekTaskInput {
+-    title: string
++export const createWeekTask = authActionClient
++    .inputSchema(createWeekTaskSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const [year, month, day] = parsedInput.plannedDate
++            .split('-')
++            .map(Number)
+ 
+-    area: 'WORK' | 'STUDIES' | 'PERSONAL'
++        const plannedDate = new Date(year, month - 1, day)
+ 
+-    plannedDate: string
+-}
++        plannedDate.setHours(0, 0, 0, 0)
+ 
+-export async function createWeekTask(input: CreateWeekTaskInput) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
+-
+-    if (!input.title.trim()) {
+-        throw new Error('O título da tarefa é obrigatório')
+-    }
+-
+-    const [year, month, day] = input.plannedDate.split('-').map(Number)
++        const today = new Date()
++        today.setHours(0, 0, 0, 0)
+ 
+-    const plannedDate = new Date(year, month - 1, day)
++        const isToday = plannedDate.getTime() === today.getTime()
+ 
+-    plannedDate.setHours(0, 0, 0, 0)
++        await db.insert(task).values({
++            userId: ctx.user.id,
++            title: parsedInput.title,
++            area: parsedInput.area,
++            priority: 'MEDIUM',
++            status: isToday ? 'TODAY' : 'WEEK',
++            plannedDate,
++        })
+ 
+-    const today = new Date()
+-    today.setHours(0, 0, 0, 0)
+-
+-    const isToday = plannedDate.getTime() === today.getTime()
+-
+-    await db.insert(task).values({
+-        userId: session.user.id,
+-        title: input.title.trim(),
+-        area: input.area,
+-        priority: 'MEDIUM',
+-        status: isToday ? 'TODAY' : 'WEEK',
+-        plannedDate,
++        revalidatePath('/semana')
++        revalidatePath('/hoje')
+     })
+-
+-    revalidatePath('/semana')
+-    revalidatePath('/hoje')
+-}
+diff --git a/app/(app)/semana/_actions/toggle-habit.ts b/app/(app)/semana/_actions/toggle-habit.ts
+index 698b96d..9dbc188 100644
+--- a/app/(app)/semana/_actions/toggle-habit.ts
++++ b/app/(app)/semana/_actions/toggle-habit.ts
+@@ -1,72 +1,63 @@
+ 'use server'
+ 
+-import { headers } from 'next/headers'
+ import { revalidatePath } from 'next/cache'
+ import { and, eq } from 'drizzle-orm'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ 
+ import { weekHabit } from '@/db/schema/week-habit'
+ import { weekHabitCheck } from '@/db/schema/week-habit-check'
+-
+-interface ToggleHabitInput {
+-    habitId: string
+-    date: string
+-}
+-
+-export async function toggleHabit(input: ToggleHabitInput) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
+-
+-    const habit = await db
+-        .select()
+-        .from(weekHabit)
+-        .where(
+-            and(
+-                eq(weekHabit.id, input.habitId),
+-                eq(weekHabit.userId, session.user.id)
++import { authActionClient } from '@/lib/safe-action'
++import { toggleHabitSchema } from '@/lib/validators/week'
++
++export const toggleHabit = authActionClient
++    .inputSchema(toggleHabitSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const habit = await db
++            .select()
++            .from(weekHabit)
++            .where(
++                and(
++                    eq(weekHabit.id, parsedInput.habitId),
++                    eq(weekHabit.userId, ctx.user.id)
++                )
+             )
+-        )
+-        .limit(1)
+-
+-    if (!habit.length) {
+-        throw new Error('Hábito não encontrado')
+-    }
+-
+-    const [year, month, day] = input.date.split('-').map(Number)
+-
+-    const date = new Date(year, month - 1, day)
+-
+-    date.setHours(0, 0, 0, 0)
+-
+-    const existing = await db
+-        .select()
+-        .from(weekHabitCheck)
+-        .where(
+-            and(
+-                eq(weekHabitCheck.habitId, input.habitId),
+-                eq(weekHabitCheck.date, date)
+-            )
+-        )
+-        .limit(1)
+-
+-    if (existing.length > 0) {
+-        await db
+-            .delete(weekHabitCheck)
+-            .where(eq(weekHabitCheck.id, existing[0].id))
+-    } else {
+-        await db.insert(weekHabitCheck).values({
+-            habitId: input.habitId,
+-            date,
+-            completed: true,
++            .limit(1)
++
++        if (!habit.length) {
++            throw new Error('Hábito não encontrado')
++        }
++
++        const [year, month, day] = parsedInput.date.split('-').map(Number)
++
++        const date = new Date(year, month - 1, day)
++
++        date.setHours(0, 0, 0, 0)
++
++        await db.transaction(async (tx) => {
++            const existing = await tx
++                .select()
++                .from(weekHabitCheck)
++                .where(
++                    and(
++                        eq(weekHabitCheck.habitId, parsedInput.habitId),
++                        eq(weekHabitCheck.date, date)
++                    )
++                )
++                .limit(1)
++
++            if (existing.length > 0) {
++                await tx
++                    .delete(weekHabitCheck)
++                    .where(eq(weekHabitCheck.id, existing[0].id))
++            } else {
++                await tx.insert(weekHabitCheck).values({
++                    habitId: parsedInput.habitId,
++                    date,
++                    completed: true,
++                })
++            }
+         })
+-    }
+ 
+-    revalidatePath('/semana')
+-}
++        revalidatePath('/semana')
++    })
+diff --git a/app/(app)/semana/_actions/toggle-week-goal.ts b/app/(app)/semana/_actions/toggle-week-goal.ts
+index b51d960..b67ce6d 100644
+--- a/app/(app)/semana/_actions/toggle-week-goal.ts
++++ b/app/(app)/semana/_actions/toggle-week-goal.ts
+@@ -1,31 +1,28 @@
+ 'use server'
+ 
+-import { headers } from 'next/headers'
+ import { revalidatePath } from 'next/cache'
+ import { and, eq } from 'drizzle-orm'
+ 
+-import { auth } from '@/lib/auth'
+ import { db } from '@/db'
+ import { weekGoal } from '@/db/schema/week-goal'
++import { authActionClient } from '@/lib/safe-action'
++import { toggleWeekGoalSchema } from '@/lib/validators/week'
+ 
+-export async function toggleWeekGoal(goalId: string, completed: boolean) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado')
+-    }
++export const toggleWeekGoal = authActionClient
++    .inputSchema(toggleWeekGoalSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        await db
++            .update(weekGoal)
++            .set({
++                completed: parsedInput.completed,
++                updatedAt: new Date(),
++            })
++            .where(
++                and(
++                    eq(weekGoal.id, parsedInput.goalId),
++                    eq(weekGoal.userId, ctx.user.id)
++                )
++            )
+ 
+-    await db
+-        .update(weekGoal)
+-        .set({
+-            completed,
+-            updatedAt: new Date(),
+-        })
+-        .where(
+-            and(eq(weekGoal.id, goalId), eq(weekGoal.userId, session.user.id))
+-        )
+-
+-    revalidatePath('/semana')
+-}
++        revalidatePath('/semana')
++    })
+diff --git a/app/(app)/semana/_components/quick-week-task.tsx b/app/(app)/semana/_components/quick-week-task.tsx
+index c3e903c..df40288 100644
+--- a/app/(app)/semana/_components/quick-week-task.tsx
++++ b/app/(app)/semana/_components/quick-week-task.tsx
+@@ -2,6 +2,7 @@
+ 
+ import { useState, useTransition } from 'react'
+ import { Plus, X } from 'lucide-react'
++import { toast } from 'sonner'
+ 
+ import { createWeekTask } from '../_actions/create-week-task'
+ 
+@@ -26,12 +27,17 @@ export function QuickWeekTask({
+         }
+ 
+         startTransition(async () => {
+-            await createWeekTask({
++            const result = await createWeekTask({
+                 title,
+                 area,
+                 plannedDate,
+             })
+ 
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                return
++            }
++
+             setTitle('')
+             setArea('WORK')
+             setOpen(false)
+diff --git a/app/(app)/semana/_components/week-goal-item.tsx b/app/(app)/semana/_components/week-goal-item.tsx
+index e252975..d03ce9f 100644
+--- a/app/(app)/semana/_components/week-goal-item.tsx
++++ b/app/(app)/semana/_components/week-goal-item.tsx
+@@ -2,6 +2,8 @@
+ 
+ import { useTransition } from 'react'
+ 
++import { toast } from 'sonner'
++
+ import { toggleWeekGoal } from '../_actions/toggle-week-goal'
+ 
+ interface WeekGoalItemProps {
+@@ -20,10 +22,14 @@ export function WeekGoalItem({
+ 
+     function handleToggle() {
+         startTransition(async () => {
+-            await toggleWeekGoal(
+-                id,
+-                !completed,
+-            )
++            const result = await toggleWeekGoal({
++                goalId: id,
++                completed: !completed,
++            })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++            }
+         })
+     }
+ 
+diff --git a/app/(app)/semana/_components/week-habit-card.tsx b/app/(app)/semana/_components/week-habit-card.tsx
+index ab37df7..42d7358 100644
+--- a/app/(app)/semana/_components/week-habit-card.tsx
++++ b/app/(app)/semana/_components/week-habit-card.tsx
+@@ -1,6 +1,7 @@
+ 'use client'
+ 
+ import { useTransition } from 'react'
++import { toast } from 'sonner'
+ 
+ import { toggleHabit } from '../_actions/toggle-habit'
+ 
+@@ -58,10 +59,14 @@ export function WeekHabitCard({
+         date: Date,
+     ) {
+         startTransition(async () => {
+-            await toggleHabit({
++            const result = await toggleHabit({
+                 habitId: id,
+                 date: getDateKey(date),
+             })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++            }
+         })
+     }
+ 
+diff --git a/app/(app)/semana/_components/week-planner-dialog.tsx b/app/(app)/semana/_components/week-planner-dialog.tsx
+index ed40a8a..6e13472 100644
+--- a/app/(app)/semana/_components/week-planner-dialog.tsx
++++ b/app/(app)/semana/_components/week-planner-dialog.tsx
+@@ -1,6 +1,7 @@
+ 'use client'
+ 
+ import { useState, useTransition } from 'react'
++import { toast } from 'sonner'
+ import { createWeekPlan } from '../_actions/create-week-plan'
+ import {
+     Plus,
+@@ -70,7 +71,7 @@ export function WeekPlannerDialog({
+ 
+     function handleSave() {
+         startTransition(async () => {
+-            await createWeekPlan({
++            const result = await createWeekPlan({
+                 weekStart,
+                 goals,
+                 habits: habits
+@@ -85,6 +86,11 @@ export function WeekPlannerDialog({
+                     })),
+             })
+ 
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                return
++            }
++
+             setOpen(false)
+         })
+     }
+diff --git a/app/(app)/tags/actions.ts b/app/(app)/tags/actions.ts
+index 43271eb..efadb8a 100644
+--- a/app/(app)/tags/actions.ts
++++ b/app/(app)/tags/actions.ts
+@@ -1,88 +1,73 @@
+ 'use server'
+ 
+-import { headers } from 'next/headers'
+ import { and, eq } from 'drizzle-orm'
+ import { revalidatePath } from 'next/cache'
++import { z } from 'zod'
+ 
+ import { db } from '@/db'
+ import { tag } from '@/db/schema/tag'
+-import { auth } from '@/lib/auth'
+-
+-interface CreateTagInput {
+-    name: string
+-    color: string
+-}
+-
+-interface UpdateTagInput {
+-    id: string
+-    name: string
+-    color: string
+-}
++import { authActionClient } from '@/lib/safe-action'
++import { tagColorSchema, tagIdSchema, tagNameSchema } from '@/lib/validators/tag'
++
++const createTagSchema = z.object({
++    name: tagNameSchema,
++    color: tagColorSchema,
++})
++
++const updateTagSchema = z.object({
++    id: tagIdSchema,
++    name: tagNameSchema,
++    color: tagColorSchema,
++})
++
++const deleteTagSchema = z.object({
++    id: tagIdSchema,
++})
++
++export const createTag = authActionClient
++    .inputSchema(createTagSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        await db.insert(tag).values({
++            id: crypto.randomUUID(),
++            userId: ctx.user.id,
++            name: parsedInput.name,
++            color: parsedInput.color,
++        })
+ 
+-export async function createTag({ name, color }: CreateTagInput) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
++        revalidatePath('/tags')
+     })
+ 
+-    if (!session) {
+-        throw new Error('Não autorizado.')
+-    }
+-
+-    const trimmedName = name.trim()
+-
+-    if (!trimmedName) {
+-        throw new Error('Informe o nome da tag.')
+-    }
+-
+-    await db.insert(tag).values({
+-        id: crypto.randomUUID(),
+-        userId: session.user.id,
+-        name: trimmedName,
+-        color,
++export const updateTag = authActionClient
++    .inputSchema(updateTagSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const [existing] = await db
++            .select({ id: tag.id })
++            .from(tag)
++            .where(and(eq(tag.id, parsedInput.id), eq(tag.userId, ctx.user.id)))
++            .limit(1)
++
++        if (!existing) {
++            throw new Error('Tag não encontrada.')
++        }
++
++        await db
++            .update(tag)
++            .set({
++                name: parsedInput.name,
++                color: parsedInput.color,
++                updatedAt: new Date(),
++            })
++            .where(and(eq(tag.id, parsedInput.id), eq(tag.userId, ctx.user.id)))
++
++        revalidatePath('/tags')
+     })
+ 
+-    revalidatePath('/tags')
+-}
++export const deleteTag = authActionClient
++    .inputSchema(deleteTagSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        await db
++            .delete(tag)
++            .where(and(eq(tag.id, parsedInput.id), eq(tag.userId, ctx.user.id)))
+ 
+-export async function updateTag({ id, name, color }: UpdateTagInput) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
++        revalidatePath('/tags')
+     })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado.')
+-    }
+-
+-    const trimmedName = name.trim()
+-
+-    if (!trimmedName) {
+-        throw new Error('Informe o nome da tag.')
+-    }
+-
+-    await db
+-        .update(tag)
+-        .set({
+-            name: trimmedName,
+-            color,
+-            updatedAt: new Date(),
+-        })
+-        .where(and(eq(tag.id, id), eq(tag.userId, session.user.id)))
+-
+-    revalidatePath('/tags')
+-}
+-
+-export async function deleteTag(id: string) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado.')
+-    }
+-
+-    await db
+-        .delete(tag)
+-        .where(and(eq(tag.id, id), eq(tag.userId, session.user.id)))
+-
+-    revalidatePath('/tags')
+-}
+diff --git a/app/(auth)/login/_actions/waitlist.ts b/app/(auth)/login/_actions/waitlist.ts
+index 0754e31..7e5ac32 100644
+--- a/app/(auth)/login/_actions/waitlist.ts
++++ b/app/(auth)/login/_actions/waitlist.ts
+@@ -4,48 +4,31 @@ import { eq } from 'drizzle-orm'
+ 
+ import { db } from '@/db'
+ import { waitlist } from '@/db/schema'
+-
+-type AddToWaitlistInput = {
+-    name: string
+-    email: string
+-    phone: string
+-}
+-
+-export async function addToWaitlist({
+-    name,
+-    email,
+-    phone,
+-}: AddToWaitlistInput) {
+-    const normalizedEmail = email.trim().toLowerCase()
+-
+-    if (!name.trim() || !normalizedEmail || !phone.trim()) {
+-        return {
+-            success: false,
+-            message: 'Preencha todos os campos.',
++import { actionClient } from '@/lib/safe-action'
++import { addToWaitlistSchema } from '@/lib/validators/waitlist'
++
++export const addToWaitlist = actionClient
++    .inputSchema(addToWaitlistSchema)
++    .action(async ({ parsedInput }) => {
++        const { name, email, phone } = parsedInput
++
++        const existing = await db
++            .select()
++            .from(waitlist)
++            .where(eq(waitlist.email, email))
++            .limit(1)
++
++        if (existing.length > 0) {
++            throw new Error('Este e-mail já está na lista de espera.')
+         }
+-    }
+ 
+-    const existing = await db
+-        .select()
+-        .from(waitlist)
+-        .where(eq(waitlist.email, normalizedEmail))
+-        .limit(1)
++        await db.insert(waitlist).values({
++            name,
++            email,
++            phone,
++        })
+ 
+-    if (existing.length > 0) {
+         return {
+-            success: false,
+-            message: 'Este e-mail já está na lista de espera.',
++            message: 'Você entrou na lista de espera!',
+         }
+-    }
+-
+-    await db.insert(waitlist).values({
+-        name: name.trim(),
+-        email: normalizedEmail,
+-        phone: phone.trim(),
+     })
+-
+-    return {
+-        success: true,
+-        message: 'Você entrou na lista de espera!',
+-    }
+-}
+diff --git a/app/(dashboard)/inbox/actions.ts b/app/(dashboard)/inbox/actions.ts
+deleted file mode 100644
+index 4fbfdc6..0000000
+--- a/app/(dashboard)/inbox/actions.ts
++++ /dev/null
+@@ -1,262 +0,0 @@
+-'use server'
+-
+-import { headers } from 'next/headers'
+-import { and, eq, inArray } from 'drizzle-orm'
+-import { revalidatePath } from 'next/cache'
+-
+-import { auth } from '@/lib/auth'
+-import { db } from '@/db'
+-import { task } from '@/db/schema/task'
+-import { tag } from '@/db/schema/tag'
+-import { taskTag } from '@/db/schema/task-tag'
+-
+-interface CreateInboxTaskInput {
+-    title: string
+-    description?: string
+-    priority?: 'LOW' | 'MEDIUM' | 'HIGH'
+-    plannedDate?: string
+-    tagIds?: string[]
+-}
+-
+-interface UpdateInboxTaskInput {
+-    taskId: string
+-    title: string
+-    description?: string
+-    priority: 'LOW' | 'MEDIUM' | 'HIGH'
+-    plannedDate?: string
+-    tagIds?: string[]
+-}
+-
+-export async function updateInboxTask({
+-    taskId,
+-    title,
+-    description,
+-    priority,
+-    plannedDate,
+-    tagIds = [],
+-}: UpdateInboxTaskInput) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado.')
+-    }
+-
+-    const trimmedTitle = title.trim()
+-
+-    if (!trimmedTitle) {
+-        throw new Error('Informe o título da tarefa.')
+-    }
+-
+-    const existingTask = await db
+-        .select({
+-            id: task.id,
+-        })
+-        .from(task)
+-        .where(
+-            and(
+-                eq(task.id, taskId),
+-                eq(task.userId, session.user.id),
+-                eq(task.area, 'INBOX')
+-            )
+-        )
+-        .limit(1)
+-
+-    if (existingTask.length === 0) {
+-        throw new Error('Tarefa não encontrada.')
+-    }
+-
+-    await db
+-        .update(task)
+-        .set({
+-            title: trimmedTitle,
+-            description: description?.trim() || null,
+-            priority,
+-            plannedDate: plannedDate
+-                ? new Date(`${plannedDate}T00:00:00`)
+-                : null,
+-        })
+-        .where(and(eq(task.id, taskId), eq(task.userId, session.user.id)))
+-
+-    // Remove as tags atuais da tarefa
+-    await db.delete(taskTag).where(eq(taskTag.taskId, taskId))
+-
+-    // Adiciona novamente as tags selecionadas
+-    if (tagIds.length > 0) {
+-        const validTags = await db
+-            .select({
+-                id: tag.id,
+-            })
+-            .from(tag)
+-            .where(
+-                and(eq(tag.userId, session.user.id), inArray(tag.id, tagIds))
+-            )
+-
+-        if (validTags.length > 0) {
+-            await db.insert(taskTag).values(
+-                validTags.map((item) => ({
+-                    taskId,
+-                    tagId: item.id,
+-                }))
+-            )
+-        }
+-    }
+-
+-    revalidatePath('/inbox')
+-}
+-
+-export async function deleteInboxTask(taskId: string) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado.')
+-    }
+-
+-    await db
+-        .delete(task)
+-        .where(
+-            and(
+-                eq(task.id, taskId),
+-                eq(task.userId, session.user.id),
+-                eq(task.area, 'INBOX')
+-            )
+-        )
+-
+-    revalidatePath('/inbox')
+-}
+-
+-export async function createInboxTask({
+-    title,
+-    description,
+-    priority = 'MEDIUM',
+-    plannedDate,
+-    tagIds = [],
+-}: CreateInboxTaskInput) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado.')
+-    }
+-
+-    const trimmedTitle = title.trim()
+-
+-    if (!trimmedTitle) {
+-        throw new Error('Informe o título da tarefa.')
+-    }
+-
+-    const [createdTask] = await db
+-        .insert(task)
+-        .values({
+-            userId: session.user.id,
+-            title: trimmedTitle,
+-            description: description?.trim() || null,
+-            area: 'INBOX',
+-            status: 'BACKLOG',
+-            priority,
+-            plannedDate: plannedDate
+-                ? new Date(`${plannedDate}T00:00:00`)
+-                : null,
+-        })
+-        .returning({
+-            id: task.id,
+-        })
+-
+-    if (tagIds.length > 0) {
+-        const validTags = await db
+-            .select({
+-                id: tag.id,
+-            })
+-            .from(tag)
+-            .where(
+-                and(eq(tag.userId, session.user.id), inArray(tag.id, tagIds))
+-            )
+-
+-        if (validTags.length > 0) {
+-            await db.insert(taskTag).values(
+-                validTags.map((item) => ({
+-                    taskId: createdTask.id,
+-                    tagId: item.id,
+-                }))
+-            )
+-        }
+-    }
+-
+-    revalidatePath('/inbox')
+-}
+-
+-export async function completeInboxTask(taskId: string) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado.')
+-    }
+-
+-    const [currentTask] = await db
+-        .select({
+-            id: task.id,
+-            completedAt: task.completedAt,
+-        })
+-        .from(task)
+-        .where(
+-            and(
+-                eq(task.id, taskId),
+-                eq(task.userId, session.user.id),
+-                eq(task.area, 'INBOX')
+-            )
+-        )
+-        .limit(1)
+-
+-    if (!currentTask) {
+-        throw new Error('Tarefa não encontrada.')
+-    }
+-
+-    await db
+-        .update(task)
+-        .set({
+-            completedAt: currentTask.completedAt ? null : new Date(),
+-        })
+-        .where(
+-            and(
+-                eq(task.id, taskId),
+-                eq(task.userId, session.user.id),
+-                eq(task.area, 'INBOX')
+-            )
+-        )
+-
+-    revalidatePath('/inbox')
+-}
+-
+-export async function moveInboxTask(
+-    taskId: string,
+-    inboxStage: 'ARRIVED' | 'ORGANIZE' | 'NEXT' | 'ORGANIZED'
+-) {
+-    const session = await auth.api.getSession({
+-        headers: await headers(),
+-    })
+-
+-    if (!session) {
+-        throw new Error('Não autorizado.')
+-    }
+-
+-    await db
+-        .update(task)
+-        .set({
+-            inboxStage,
+-        })
+-        .where(
+-            and(
+-                eq(task.id, taskId),
+-                eq(task.userId, session.user.id),
+-                eq(task.area, 'INBOX')
+-            )
+-        )
+-
+-    revalidatePath('/inbox')
+-}
+diff --git a/components/auth/waitlist-form.tsx b/components/auth/waitlist-form.tsx
+index ee999ac..562dc2b 100644
+--- a/components/auth/waitlist-form.tsx
++++ b/components/auth/waitlist-form.tsx
+@@ -29,12 +29,19 @@ export function WaitlistForm({ onSuccess }: WaitlistFormProps) {
+         try {
+             const result = await addToWaitlist(formData);
+ 
+-            if (!result.success) {
+-                toast.error(result.message);
++            if (result?.serverError) {
++                toast.error(result.serverError);
+                 return;
+             }
+ 
+-            toast.success(result.message);
++            if (result?.validationErrors) {
++                toast.error("Preencha todos os campos corretamente.");
++                return;
++            }
++
++            toast.success(
++                result?.data?.message ?? "Você entrou na lista de espera!"
++            );
+ 
+             setFormData({
+                 name: "",
+diff --git a/components/board/work-task-card.tsx b/components/board/work-task-card.tsx
+index 0bb4d20..2ef2b05 100644
+--- a/components/board/work-task-card.tsx
++++ b/components/board/work-task-card.tsx
+@@ -55,11 +55,11 @@ export function WorkTaskCard({
+         }
+ 
+         startTransition(async () => {
+-            await completeTask(
+-                task.id,
++            await completeTask({
++                taskId: task.id,
+                 completed,
+-                'BACKLOG'
+-            )
++                returnStatus: 'BACKLOG',
++            })
+         })
+     }
+ 
+diff --git a/components/dashboard/complete-inbox-task-button.tsx b/components/dashboard/complete-inbox-task-button.tsx
+index dbd6cfb..2d5f3bb 100644
+--- a/components/dashboard/complete-inbox-task-button.tsx
++++ b/components/dashboard/complete-inbox-task-button.tsx
+@@ -3,8 +3,9 @@
+ import { useTransition } from "react"
+ import { Check, Loader2 } from "lucide-react"
+ import { useRouter } from "next/navigation"
++import { toast } from "sonner"
+ 
+-import { completeInboxTask } from "@/app/(dashboard)/inbox/actions"
++import { completeInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud"
+ 
+ interface CompleteInboxTaskButtonProps {
+     taskId: string
+@@ -18,7 +19,13 @@ export function CompleteInboxTaskButton({
+ 
+     function handleComplete() {
+         startTransition(async () => {
+-            await completeInboxTask(taskId)
++            const result = await completeInboxTask({ taskId })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                return
++            }
++
+             router.refresh()
+         })
+     }
+diff --git a/components/dashboard/create-task-button.tsx b/components/dashboard/create-task-button.tsx
+index 045638e..d1adc05 100644
+--- a/components/dashboard/create-task-button.tsx
++++ b/components/dashboard/create-task-button.tsx
+@@ -2,6 +2,8 @@
+ 
+ import { useState } from 'react'
+ 
++import { toast } from 'sonner'
++
+ import { createTask } from '@/app/(app)/hoje/_actions/create-task'
+ import { Button } from '@/components/ui/button'
+ import { Input } from '@/components/ui/input'
+@@ -69,28 +71,27 @@ export function CreateTaskButton() {
+         try {
+             setIsSubmitting(true)
+ 
+-            await createTask({
+-                title,
+-                description,
+-                destination,
+-
+-                area: destination === 'TODAY' ? area : undefined,
+-
+-                priority:
+-                    destination === 'TODAY'
+-                        ? priority
+-                        : undefined,
+-
+-                plannedDate:
+-                    destination === 'TODAY'
+-                        ? plannedDate
+-                        : undefined,
+-
+-                plannedTime:
+-                    destination === 'TODAY'
+-                        ? plannedTime
+-                        : undefined,
+-            })
++            const result =
++                destination === 'TODAY'
++                    ? await createTask({
++                        destination: 'TODAY',
++                        title,
++                        description,
++                        area,
++                        priority,
++                        plannedDate,
++                        plannedTime,
++                    })
++                    : await createTask({
++                        destination: 'INBOX',
++                        title,
++                        description,
++                    })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                return
++            }
+ 
+             setTitle('')
+             setArea('WORK')
+diff --git a/components/dashboard/edit-inbox-task-modal.tsx b/components/dashboard/edit-inbox-task-modal.tsx
+index e063058..0215fcc 100644
+--- a/components/dashboard/edit-inbox-task-modal.tsx
++++ b/components/dashboard/edit-inbox-task-modal.tsx
+@@ -3,7 +3,8 @@
+ import { useMemo, useState, useTransition } from "react";
+ import { Loader2, X } from "lucide-react";
+ import { useRouter } from "next/navigation";
+-import { updateInboxTask } from "@/app/(dashboard)/inbox/actions";
++import { toast } from "sonner";
++import { updateInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud";
+ 
+ interface TagOption { id: string; name: string; color: string; }
+ interface Props {
+@@ -34,7 +35,13 @@ export function EditInboxTaskModal({ open, onClose, task, availableTags }: Props
+         if (!title.trim()) return;
+ 
+         startTransition(async () => {
+-            await updateInboxTask({ taskId: task.id, title, description, priority, plannedDate: plannedDate || undefined, tagIds: selectedTagIds });
++            const result = await updateInboxTask({ taskId: task.id, title, description, priority, plannedDate: plannedDate || undefined, tagIds: selectedTagIds });
++
++            if (result?.serverError) {
++                toast.error(result.serverError);
++                return;
++            }
++
+             onClose();
+             router.refresh();
+         });
+diff --git a/components/dashboard/focus-task-checkbox.tsx b/components/dashboard/focus-task-checkbox.tsx
+index de5a969..924d74b 100644
+--- a/components/dashboard/focus-task-checkbox.tsx
++++ b/components/dashboard/focus-task-checkbox.tsx
+@@ -26,10 +26,10 @@ export function FocusTaskCheckbox({
+             // Se estiver contando foco,
+             // encerra a sessão primeiro.
+             if (activeSessionId) {
+-                await finishFocus(activeSessionId)
++                await finishFocus({ sessionId: activeSessionId })
+             }
+ 
+-            await completeTask(taskId, false)
++            await completeTask({ taskId, completed: false })
+         })
+     }
+ 
+diff --git a/components/dashboard/focus-timer.tsx b/components/dashboard/focus-timer.tsx
+index ca9b73b..196819e 100644
+--- a/components/dashboard/focus-timer.tsx
++++ b/components/dashboard/focus-timer.tsx
+@@ -3,6 +3,7 @@
+ import { useEffect, useState, useTransition } from 'react'
+ 
+ import { Pause, Play, Square } from 'lucide-react'
++import { toast } from 'sonner'
+ 
+ import { startFocus } from '@/app/(app)/hoje/_actions/start-focus'
+ import { finishFocus } from '@/app/(app)/hoje/_actions/finish-focus'
+@@ -125,7 +126,14 @@ export function FocusTimer({
+ 
+     function handleStart() {
+         startTransition(async () => {
+-            const focus = await startFocus(taskId)
++            const result = await startFocus({ taskId })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                return
++            }
++
++            const focus = result?.data
+ 
+             if (!focus) {
+                 return
+@@ -152,7 +160,12 @@ export function FocusTimer({
+         }
+ 
+         startTransition(async () => {
+-            await pauseFocus(sessionId)
++            const result = await pauseFocus({ sessionId })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                return
++            }
+ 
+             setAccumulatedSeconds(
+                 elapsedSeconds
+@@ -168,7 +181,12 @@ export function FocusTimer({
+         }
+ 
+         startTransition(async () => {
+-            await resumeFocus(sessionId)
++            const result = await resumeFocus({ sessionId })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                return
++            }
+ 
+             setStartedAt(new Date())
+             setPaused(false)
+@@ -181,7 +199,12 @@ export function FocusTimer({
+         }
+ 
+         startTransition(async () => {
+-            await finishFocus(sessionId)
++            const result = await finishFocus({ sessionId })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                return
++            }
+ 
+             setSessionId(null)
+             setStartedAt(null)
+@@ -195,7 +218,7 @@ export function FocusTimer({
+         return (
+             <div className="flex flex-wrap items-center gap-3">
+ 
+-                <span className="min-w-17.5font-mono text-sm font-semibold text-blue-600">
++                <span className="min-w-17.5 font-mono text-sm font-semibold text-blue-600">
+                     {formatSeconds(
+                         elapsedSeconds
+                     )}
+diff --git a/components/dashboard/inbox-board.tsx b/components/dashboard/inbox-board.tsx
+index 4b35adb..07fca70 100644
+--- a/components/dashboard/inbox-board.tsx
++++ b/components/dashboard/inbox-board.tsx
+@@ -1,7 +1,8 @@
+ "use client"
+ 
+ import { useEffect, useState, useTransition } from "react"
+-import { moveInboxTask } from "@/app/(dashboard)/inbox/actions"
++import { toast } from "sonner"
++import { moveInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud"
+ import { InboxColumn } from "@/components/dashboard/inbox-column"
+ import { InboxTaskCard } from "@/components/dashboard/inbox-task-card"
+ 
+@@ -65,6 +66,8 @@ export function InboxBoard({
+             return
+         }
+ 
++        const previousItems = items
++
+         setItems((current) =>
+             current.map((item) =>
+                 item.id === taskId
+@@ -77,7 +80,12 @@ export function InboxBoard({
+         )
+ 
+         startTransition(async () => {
+-            await moveInboxTask(taskId, stage)
++            const result = await moveInboxTask({ taskId, inboxStage: stage })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                setItems(previousItems)
++            }
+         })
+     }
+ 
+diff --git a/components/dashboard/inbox-task-actions.tsx b/components/dashboard/inbox-task-actions.tsx
+index c881744..43b5427 100644
+--- a/components/dashboard/inbox-task-actions.tsx
++++ b/components/dashboard/inbox-task-actions.tsx
+@@ -1,6 +1,7 @@
+ 'use client'
+ 
+ import { useTransition } from 'react'
++import { toast } from 'sonner'
+ 
+ import { organizeInboxTask } from '@/app/(app)/inbox/_actions/organize-inbox-task'
+ import { Button } from '@/components/ui/button'
+@@ -24,7 +25,11 @@ export function InboxTaskActions({
+             | 'PERSONAL'
+     ) {
+         startTransition(async () => {
+-            await organizeInboxTask(taskId, destination)
++            const result = await organizeInboxTask({ taskId, destination })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++            }
+         })
+     }
+ 
+diff --git a/components/dashboard/inbox-task-menu.tsx b/components/dashboard/inbox-task-menu.tsx
+index 74a030a..7542ad3 100644
+--- a/components/dashboard/inbox-task-menu.tsx
++++ b/components/dashboard/inbox-task-menu.tsx
+@@ -3,7 +3,8 @@
+ import { useState, useTransition } from "react";
+ import { Loader2, MoreVertical, Pencil, Trash2 } from "lucide-react";
+ import { useRouter } from "next/navigation";
+-import { deleteInboxTask } from "@/app/(dashboard)/inbox/actions";
++import { toast } from "sonner";
++import { deleteInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud";
+ import { EditInboxTaskModal } from "@/components/dashboard/edit-inbox-task-modal";
+ 
+ interface TagOption { id: string; name: string; color: string; }
+@@ -21,7 +22,13 @@ export function InboxTaskMenu({ task, availableTags }: Props) {
+ 
+     function handleDelete() {
+         startTransition(async () => {
+-            await deleteInboxTask(task.id);
++            const result = await deleteInboxTask({ taskId: task.id });
++
++            if (result?.serverError) {
++                toast.error(result.serverError);
++                return;
++            }
++
+             setDeleteOpen(false);
+             setMenuOpen(false);
+             router.refresh();
+diff --git a/components/dashboard/new-inbox-task-button.tsx b/components/dashboard/new-inbox-task-button.tsx
+index b285ad6..820f998 100644
+--- a/components/dashboard/new-inbox-task-button.tsx
++++ b/components/dashboard/new-inbox-task-button.tsx
+@@ -3,8 +3,9 @@
+ import { useMemo, useState, useTransition } from "react";
+ import { Loader2, Plus, X } from "lucide-react";
+ import { useRouter } from "next/navigation";
++import { toast } from "sonner";
+ 
+-import { createInboxTask } from "@/app/(dashboard)/inbox/actions";
++import { createInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud";
+ 
+ interface TagOption {
+     id: string;
+@@ -60,7 +61,7 @@ export function NewInboxTaskButton({
+         }
+ 
+         startTransition(async () => {
+-            await createInboxTask({
++            const result = await createInboxTask({
+                 title,
+                 description,
+                 priority,
+@@ -68,6 +69,11 @@ export function NewInboxTaskButton({
+                 tagIds: selectedTagIds,
+             });
+ 
++            if (result?.serverError) {
++                toast.error(result.serverError);
++                return;
++            }
++
+             resetForm();
+             setOpen(false);
+             router.refresh();
+diff --git a/components/dashboard/new-tag-button.tsx b/components/dashboard/new-tag-button.tsx
+index f306607..31ca97f 100644
+--- a/components/dashboard/new-tag-button.tsx
++++ b/components/dashboard/new-tag-button.tsx
+@@ -3,6 +3,7 @@
+ import { useState, useTransition } from "react";
+ import { Plus, Loader2 } from "lucide-react";
+ import { useRouter } from "next/navigation";
++import { toast } from "sonner";
+ 
+ import { createTag } from "@/app/(app)/tags/actions";
+ 
+@@ -34,11 +35,16 @@ export function NewTagButton() {
+         }
+ 
+         startTransition(async () => {
+-            await createTag({
++            const result = await createTag({
+                 name: trimmedName,
+                 color,
+             });
+ 
++            if (result?.serverError) {
++                toast.error(result.serverError);
++                return;
++            }
++
+             setName("");
+             setColor(COLORS[0]);
+             setOpen(false);
+diff --git a/components/dashboard/tag-actions.tsx b/components/dashboard/tag-actions.tsx
+index ff34e38..8c14756 100644
+--- a/components/dashboard/tag-actions.tsx
++++ b/components/dashboard/tag-actions.tsx
+@@ -3,6 +3,7 @@
+ import { useState, useTransition } from "react";
+ import { Loader2, Pencil, Trash2, X } from "lucide-react";
+ import { useRouter } from "next/navigation";
++import { toast } from "sonner";
+ 
+ import {
+     deleteTag,
+@@ -50,12 +51,17 @@ export function TagActions({
+         }
+ 
+         startTransition(async () => {
+-            await updateTag({
++            const result = await updateTag({
+                 id: tagId,
+                 name: trimmedName,
+                 color: tagColor,
+             });
+ 
++            if (result?.serverError) {
++                toast.error(result.serverError);
++                return;
++            }
++
+             setEditOpen(false);
+             router.refresh();
+         });
+@@ -63,7 +69,12 @@ export function TagActions({
+ 
+     function handleDelete() {
+         startTransition(async () => {
+-            await deleteTag(tagId);
++            const result = await deleteTag({ id: tagId });
++
++            if (result?.serverError) {
++                toast.error(result.serverError);
++                return;
++            }
+ 
+             setDeleteOpen(false);
+             router.refresh();
+diff --git a/components/dashboard/task-actions.tsx b/components/dashboard/task-actions.tsx
+index 6d9f6f9..5e74ca0 100644
+--- a/components/dashboard/task-actions.tsx
++++ b/components/dashboard/task-actions.tsx
+@@ -2,6 +2,7 @@
+ 
+ import { useState, useTransition } from 'react'
+ import { MoreVertical, Pencil, Trash2 } from 'lucide-react'
++import { toast } from 'sonner'
+ 
+ import {
+     Popover,
+@@ -45,13 +46,18 @@ export function TaskActions({
+         if (!editTitle.trim()) return
+ 
+         startTransition(async () => {
+-            await updateTask({
++            const result = await updateTask({
+                 taskId,
+                 title: editTitle,
+                 description: editDescription,
+                 plannedTime: editTime,
+             })
+ 
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                return
++            }
++
+             setOpen(false)
+             reset()
+         })
+@@ -59,7 +65,12 @@ export function TaskActions({
+ 
+     function handleDelete() {
+         startTransition(async () => {
+-            await deleteTask(taskId)
++            const result = await deleteTask({ taskId })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++                return
++            }
+ 
+             setOpen(false)
+             reset()
+diff --git a/components/dashboard/task-row.tsx b/components/dashboard/task-row.tsx
+index 442de05..3bb6501 100644
+--- a/components/dashboard/task-row.tsx
++++ b/components/dashboard/task-row.tsx
+@@ -2,6 +2,7 @@
+ 
+ import { useTransition } from 'react'
+ import { Clock3, MoreVertical, Star } from 'lucide-react'
++import { toast } from 'sonner'
+ import { completeTask } from '@/app/(app)/hoje/_actions/complete-task'
+ import { AreaBadge } from './area-badge'
+ import { toggleTopPriority } from '@/app/(app)/hoje/_actions/toggle-top-priority'
+@@ -36,7 +37,14 @@ export function TaskRow({
+         }
+ 
+         startTransition(async () => {
+-            await toggleTopPriority(id, topPriority)
++            const result = await toggleTopPriority({
++                taskId: id,
++                currentValue: topPriority,
++            })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++            }
+         })
+     }
+ 
+@@ -46,7 +54,14 @@ export function TaskRow({
+         }
+ 
+         startTransition(async () => {
+-            await completeTask(id, completed)
++            const result = await completeTask({
++                taskId: id,
++                completed,
++            })
++
++            if (result?.serverError) {
++                toast.error(result.serverError)
++            }
+         })
+     }
+ 
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 2427cba..efaee74 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -4,11 +4,14 @@ services:
+     container_name: trello-clone-db
+     restart: unless-stopped
+     environment:
+-      POSTGRES_USER: postgres
+-      POSTGRES_PASSWORD: postgres
+-      POSTGRES_DB: trello_clone
++      POSTGRES_USER: ${POSTGRES_USER:-postgres}
++      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
++      POSTGRES_DB: ${POSTGRES_DB:-trello_clone}
++      TZ: America/Sao_Paulo
+     ports:
+-      - "5432:5432"
++      # Vinculado a localhost: acessível só de dentro do VPS (ex.: drizzle-kit studio via SSH tunnel),
++      # nunca exposto publicamente na interface externa.
++      - "127.0.0.1:5432:5432"
+     volumes:
+       - postgres_data:/var/lib/postgresql/data
+ 
+diff --git a/docs/refactoring/00-fundacao-safe-action.md b/docs/refactoring/00-fundacao-safe-action.md
+new file mode 100644
+index 0000000..0f1207f
+--- /dev/null
++++ b/docs/refactoring/00-fundacao-safe-action.md
+@@ -0,0 +1,40 @@
++# 00 — Fundação: `lib/safe-action.ts`
++
++**Status:** ✅ concluído e validado (typecheck ok)
++
++## Antes
++
++Um único `authActionClient` fazia sessão **e** lookup de board juntos,
++mesmo sendo usado hoje apenas por `app/(app)/board/actions.ts`. Migrar
++as demais features (tasks, tags, semana, inbox, foco) para
++`next-safe-action` exigiria ou reusar esse client (forçando um lookup
++de board desnecessário em domínios que não têm relação com board), ou
++duplicar um client novo por feature.
++
++## Depois
++
++`lib/safe-action.ts` agora expõe dois clients:
++
++- `authActionClient` — apenas sessão. É o client padrão para a
++  maioria das actions do app.
++- `authBoardActionClient` — estende `authActionClient` e adiciona
++  `ctx.boardId` (lookup do board do usuário). Usado só pelo domínio
++  Board.
++
++`app/(app)/board/actions.ts` foi atualizado para importar/usar
++`authBoardActionClient` em vez de `authActionClient` (rename simples,
++nenhuma lógica de negócio mudou).
++
++## Call sites atualizados
++
++Nenhum client component chama `lib/safe-action.ts` diretamente — é
++infraestrutura interna de actions. Nenhum call site de UI foi afetado
++por esta etapa.
++
++## Pendências
++
++Nenhuma.
++
++## Próxima etapa
++
++Feature 01 — Tags.
+diff --git a/docs/refactoring/01-tags.md b/docs/refactoring/01-tags.md
+new file mode 100644
+index 0000000..4f8a753
+--- /dev/null
++++ b/docs/refactoring/01-tags.md
+@@ -0,0 +1,38 @@
++# 01 — Tags
++
++**Status:** ✅ concluído e validado (typecheck ok)
++
++## Antes
++
++`app/(app)/tags/actions.ts` — 3 exports (`createTag`, `updateTag`,
++`deleteTag`), cada um repetindo `auth.api.getSession` + `if (!session)
++throw` manualmente, sem schema Zod (apenas `if (!trimmedName) throw`).
++
++## Depois
++
++- **Criado** `lib/validators/tag.ts`: `tagNameSchema`, `tagColorSchema`,
++  `tagIdSchema`.
++- **Reescrito** `app/(app)/tags/actions.ts`: os 3 exports agora são
++  `authActionClient.inputSchema(...).action(...)`, no mesmo formato de
++  `app/(app)/board/actions.ts`.
++- `updateTag` passou a validar explicitamente que a tag existe e
++  pertence ao usuário antes de atualizar (antes, um update para um id
++  inexistente/de outro usuário simplesmente não afetava nenhuma linha,
++  silenciosamente — comportamento não documentado, agora consistente
++  com o padrão do Board, que lança erro nesse caso).
++
++## Call sites atualizados
++
++- `components/dashboard/new-tag-button.tsx` — `createTag(...)` agora
++  retorna `{ data, serverError }`; adicionado `toast.error(...)` em
++  caso de erro (padrão já usado em `use-board-dnd.ts`).
++- `components/dashboard/tag-actions.tsx` — `updateTag`/`deleteTag`
++  idem, com `toast.error(...)`.
++
++## Pendências
++
++Nenhuma. Feature totalmente migrada, sem chamada antiga remanescente.
++
++## Próxima etapa
++
++Feature 02 — Sessão de foco (Hoje).
+diff --git a/docs/refactoring/02-sessao-foco.md b/docs/refactoring/02-sessao-foco.md
+new file mode 100644
+index 0000000..58e5e91
+--- /dev/null
++++ b/docs/refactoring/02-sessao-foco.md
+@@ -0,0 +1,48 @@
++# 02 — Sessão de foco (Hoje)
++
++**Status:** ✅ concluído e validado (typecheck ok)
++
++## Antes
++
++4 arquivos em `app/(app)/hoje/_actions/` (`start-focus.ts`,
++`pause-focus.ts`, `resume-focus.ts`, `finish-focus.ts`), cada um com
++`auth.api.getSession` manual duplicado, sem Zod. `start-focus.ts` já
++tinha sido corrigido numa rodada anterior (checagem de ownership da
++task + transação), mas ainda fora do padrão next-safe-action.
++
++## Depois
++
++- **Criado** `lib/validators/focus.ts`: `startFocusSchema` (`taskId`),
++  `focusSessionIdSchema` (`sessionId`).
++- Os 4 arquivos reescritos como `authActionClient.inputSchema(...).action(...)`.
++- Lógica de negócio preservada 1:1 — mesma transação/checagem de
++  ownership em `start-focus.ts`, mesmo comportamento idempotente
++  (retorno silencioso, sem erro) em pause/resume/finish quando a
++  sessão já não está no estado esperado (ex.: pausar uma sessão já
++  pausada). Isso não é um bug — é proteção contra duplo clique — e foi
++  mantido intencionalmente.
++
++## Call sites atualizados
++
++- `components/dashboard/focus-timer.tsx` — as 4 chamadas passam a usar
++  o formato de objeto (`{ taskId }` / `{ sessionId }`) e a checar
++  `result?.serverError` com `toast.error(...)`. O retorno de
++  `startFocus` agora vem em `result.data` (antes vinha direto).
++- `components/dashboard/focus-task-checkbox.tsx` — chamada de
++  `finishFocus(activeSessionId)` atualizada para
++  `finishFocus({ sessionId: activeSessionId })`. Este call site não
++  tinha aparecido na primeira busca por "quem chama as actions de
++  foco" (só temos `focus-timer.tsx` na revisão original) — encontrado
++  pelo `tsc` ao validar esta etapa, o que confirma o valor de validar
++  a cada feature em vez de só no final.
++
++## Pendências
++
++Nenhuma nas actions de foco. A segunda chamada dentro de
++`focus-task-checkbox.tsx` (`completeTask(taskId, false)`) ainda está
++no formato antigo — será migrada na Feature 03 (Tarefas), que é dona
++dessa action.
++
++## Próxima etapa
++
++Feature 03 — Tarefas (Hoje).
+diff --git a/docs/refactoring/03-tarefas-hoje.md b/docs/refactoring/03-tarefas-hoje.md
+new file mode 100644
+index 0000000..ad192cf
+--- /dev/null
++++ b/docs/refactoring/03-tarefas-hoje.md
+@@ -0,0 +1,55 @@
++# 03 — Tarefas (Hoje)
++
++**Status:** ✅ concluído e validado (typecheck ok)
++
++## Antes
++
++5 arquivos em `app/(app)/hoje/_actions/` (`create-task.ts`,
++`update-task.ts`, `delete-task.ts`, `complete-task.ts`,
++`toggle-top-priority.ts`), cada um com sessão manual e sem Zod.
++`delete-task.ts` já tinha o fix de ownership (IDOR) de uma rodada
++anterior; `create-task.ts` validava campos condicionais com
++`if (!input.area || ...) throw` manual.
++
++## Depois
++
++- **Criado** `lib/validators/task.ts`:
++  - `createTaskSchema` — `z.discriminatedUnion('destination', [...])`,
++    substituindo a checagem manual de campos condicionais por
++    validação declarativa (INBOX não exige área/prioridade/data;
++    TODAY exige as três).
++  - `updateTaskSchema`, `taskIdSchema`, `completeTaskSchema` (com
++    `returnStatus` default `'TODAY'`, preservando o valor padrão que
++    a função original tinha), `toggleTopPrioritySchema`.
++- Os 5 arquivos reescritos como `authActionClient.inputSchema(...).action(...)`.
++  Lógica de negócio idêntica à original, incluindo o limite de 3
++  prioridades em `toggle-top-priority.ts`.
++
++## Call sites atualizados
++
++- `components/dashboard/create-task-button.tsx` — chamada agora
++  monta o objeto certo por variante (`destination: 'TODAY'` com todos
++  os campos, ou `destination: 'INBOX'` só com título/descrição), em
++  vez de passar `undefined` nos campos condicionais. Adicionado
++  `toast.error` em `serverError`.
++- `components/dashboard/task-actions.tsx` — `updateTask`/`deleteTask`
++  no formato de objeto, com toast de erro.
++- `components/dashboard/task-row.tsx` — `toggleTopPriority` e
++  `completeTask` no formato de objeto. **Ganho de UX incidental:**
++  antes, o erro "Você já possui 3 prioridades para hoje" era uma
++  exceção não tratada dentro do `startTransition` (sem feedback nenhum
++  ao usuário); agora aparece como `toast.error`.
++- `components/board/work-task-card.tsx` — `completeTask` no formato
++  de objeto (`returnStatus: 'BACKLOG'`).
++- `components/dashboard/focus-task-checkbox.tsx` — `completeTask` no
++  formato de objeto.
++
++## Pendências
++
++Nenhuma. Busca final por `completeTask(`/`toggleTopPriority(`/etc. no
++formato antigo (posicional) não retornou nenhuma ocorrência fora dos
++arquivos de action.
++
++## Próxima etapa
++
++Feature 04 — Semana (metas/hábitos).
+diff --git a/docs/refactoring/04-semana.md b/docs/refactoring/04-semana.md
+new file mode 100644
+index 0000000..f85caca
+--- /dev/null
++++ b/docs/refactoring/04-semana.md
+@@ -0,0 +1,53 @@
++# 04 — Semana (metas e hábitos)
++
++**Status:** ✅ concluído e validado (typecheck ok)
++
++## Antes
++
++4 arquivos em `app/(app)/semana/_actions/` (`create-week-plan.ts`,
++`create-week-task.ts`, `toggle-habit.ts`, `toggle-week-goal.ts`), sem
++Zod, sessão manual duplicada. `toggle-habit.ts` fazia um
++check-then-act (SELECT seguido de DELETE ou INSERT) fora de
++transação — risco de duplicar `week_habit_check` em cliques
++concorrentes, apontado na revisão técnica original.
++
++## Depois
++
++- **Criado** `lib/validators/week.ts`: `createWeekPlanSchema`,
++  `createWeekTaskSchema`, `toggleHabitSchema`, `toggleWeekGoalSchema`.
++- Os 4 arquivos reescritos como `authActionClient.inputSchema(...).action(...)`.
++- **Melhoria aproveitada durante a migração:** o check-then-act de
++  `toggle-habit.ts` agora está dentro de `db.transaction(...)`,
++  reduzindo a janela de corrida entre o SELECT e o
++  INSERT/DELETE de `week_habit_check` — mesmo padrão de transação já
++  usado em `board/actions.ts` e em `create-week-plan.ts`. Isso não
++  elimina 100% o risco (ainda não há unique constraint em
++  `(habitId, date)` a nível de banco, que continua registrado como
++  pendência na revisão técnica original), mas reduz bastante a chance
++  de duplicar o registro.
++
++## Call sites atualizados
++
++- `app/(app)/semana/_components/week-planner-dialog.tsx` — já
++  chamava `createWeekPlan` com objeto no formato certo; adicionado
++  `toast.error` em `serverError`.
++- `app/(app)/semana/_components/quick-week-task.tsx` — idem,
++  `createWeekTask` já estava no formato certo; adicionado toast.
++- `app/(app)/semana/_components/week-habit-card.tsx` — `toggleHabit`
++  já estava no formato certo; adicionado toast para o erro "Hábito
++  não encontrado" (antes, sem feedback).
++- `app/(app)/semana/_components/week-goal-item.tsx` — única chamada
++  que precisou mudar de posicional (`toggleWeekGoal(id, !completed)`)
++  para objeto (`toggleWeekGoal({ goalId: id, completed: !completed })`);
++  adicionado toast.
++
++## Pendências
++
++Unique constraint em `week_habit_check (habitId, date)` continua
++pendente — é uma mudança de schema/migration, fora do escopo desta
++refatoração de Server Actions (já registrada na revisão técnica
++original, Prioridade 2, item 5).
++
++## Próxima etapa
++
++Feature 05 — Inbox.
+diff --git a/docs/refactoring/05-inbox.md b/docs/refactoring/05-inbox.md
+new file mode 100644
+index 0000000..2f9c960
+--- /dev/null
++++ b/docs/refactoring/05-inbox.md
+@@ -0,0 +1,57 @@
++# 05 — Inbox
++
++**Status:** ✅ concluído e validado (typecheck ok)
++
++## Antes
++
++`app/(app)/inbox/_actions/organize-inbox-task.ts` (1 export) e
++`app/(app)/inbox/_actions/inbox-crud.ts` (5 exports: `createInboxTask`,
++`updateInboxTask`, `deleteInboxTask`, `completeInboxTask`,
++`moveInboxTask`), ambos manuais, sem Zod. `inbox-crud.ts` já tinha sido
++movido de `app/(dashboard)/inbox/actions.ts` (pasta órfã) numa rodada
++anterior a esta refatoração, e `completeInboxTask` já tinha sido
++corrigido para setar `status: 'DONE'/'BACKLOG'` junto com
++`completedAt` (bug de inconsistência com `complete-task.ts`
++encontrado na revisão técnica original).
++
++## Depois
++
++- **Criado** `lib/validators/inbox.ts`: `organizeInboxTaskSchema`,
++  `createInboxTaskSchema`, `updateInboxTaskSchema`,
++  `inboxTaskIdSchema`, `moveInboxTaskSchema`.
++- Os 6 exports (1 em `organize-inbox-task.ts` + 5 em `inbox-crud.ts`)
++  reescritos como `authActionClient.inputSchema(...).action(...)`.
++  Lógica de negócio preservada 1:1, incluindo o fix de
++  `completeInboxTask` já existente.
++
++## Call sites atualizados
++
++- `components/dashboard/inbox-task-actions.tsx` — `organizeInboxTask`
++  para formato de objeto, com toast de erro.
++- `components/dashboard/edit-inbox-task-modal.tsx` — já chamava
++  `updateInboxTask` com objeto no formato certo; adicionado toast.
++- `components/dashboard/inbox-task-menu.tsx` — `deleteInboxTask` para
++  formato de objeto, com toast.
++- `components/dashboard/new-inbox-task-button.tsx` — já chamava
++  `createInboxTask` com objeto no formato certo; adicionado toast.
++- `components/dashboard/complete-inbox-task-button.tsx` —
++  `completeInboxTask` para formato de objeto, com toast.
++- `components/dashboard/inbox-board.tsx` — `moveInboxTask` para
++  formato de objeto. **Melhoria aproveitada:** este componente já
++  fazia update otimista (`setItems` antes de chamar a action, sem
++  esperar o servidor); adicionei rollback (`setItems(previousItems)`)
++  em caso de `serverError`, no mesmo padrão de
++  `use-board-dnd.ts` (referência arquitetural do Board). Antes, um
++  erro do servidor deixava a UI numa coluna que o banco não refletia,
++  sem nenhum aviso.
++
++## Pendências
++
++Nenhuma nova. A duplicação de fluxos de organização do Inbox (kanban
++por `inboxStage` vs. botões `organizeInboxTask`) continua registrada
++como melhoria de produto na revisão técnica original — não é escopo
++desta refatoração de Server Actions.
++
++## Próxima etapa
++
++Feature 06 — Waitlist (auth).
+diff --git a/docs/refactoring/06-waitlist-auth.md b/docs/refactoring/06-waitlist-auth.md
+new file mode 100644
+index 0000000..f23ad66
+--- /dev/null
++++ b/docs/refactoring/06-waitlist-auth.md
+@@ -0,0 +1,44 @@
++# 06 — Waitlist (auth)
++
++**Status:** ✅ concluído e validado (typecheck ok)
++
++## Antes
++
++`app/(auth)/login/_actions/waitlist.ts` — sem sessão (é uma action
++pública, de landing page, corretamente sem checagem de auth), sem
++Zod, retornando um shape próprio `{ success, message }` em vez de
++lançar erro.
++
++## Depois
++
++- **Criado** `lib/validators/waitlist.ts`: `addToWaitlistSchema`
++  (`name`, `email` com `.email()`, `phone`), substituindo os
++  `if (!name.trim() || ...)` manuais.
++- Reescrito como `actionClient.inputSchema(...).action(...)` — usa o
++  `actionClient` **base** (sem `authActionClient`), porque é uma
++  action pública de cadastro na waitlist, sem usuário autenticado.
++  Isso é intencional e diferente das demais features: nem toda action
++  do projeto deve exigir sessão, e o padrão do Board já deixava essa
++  distinção disponível via `actionClient` vs `authActionClient` (aqui
++  ampliada com `authBoardActionClient` na Feature 00).
++- A regra de negócio "e-mail já cadastrado" agora é um `throw new
++  Error(...)`, no mesmo padrão usado em `toggle-top-priority.ts`
++  ("3 prioridades") — em vez do shape customizado `{ success: false,
++  message }`.
++
++## Call sites atualizados
++
++- `components/auth/waitlist-form.tsx` — antes lia
++  `result.success`/`result.message`; agora lê
++  `result?.serverError` (erro de negócio, ex.: e-mail duplicado),
++  `result?.validationErrors` (campo inválido) e
++  `result?.data?.message` (sucesso).
++
++## Pendências
++
++Nenhuma.
++
++## Próxima etapa
++
++Nenhuma — esta era a última feature do plano. Seguir para validação
++final (typecheck completo, lint, testes, build) e geração do patch.
+diff --git a/docs/refactoring/README.md b/docs/refactoring/README.md
+new file mode 100644
+index 0000000..46b9580
+--- /dev/null
++++ b/docs/refactoring/README.md
+@@ -0,0 +1,153 @@
++# Refatoração arquitetural — Server Actions
++
++## Objetivo
++
++Unificar todas as Server Actions do projeto no padrão já usado em
++`app/(app)/board/actions.ts`: `next-safe-action` + schemas Zod em
++`lib/validators/`, eliminando o padrão manual (`'use server'` +
++`auth.api.getSession` duplicado + checagens ad-hoc) usado nas demais
++features.
++
++Board é a referência arquitetural. Nenhuma regra de negócio muda —
++esta é uma refatoração estrutural, não uma reescrita de produto.
++
++**Branch/commit base:** `main` @ `4256ae0747da42d33593a227091c8d52219279df`
++("feat: add waitlist and improve auth experience").
++
++## Como ler este diretório
++
++Cada arquivo `NN-nome-da-feature.md` documenta uma feature migrada:
++o que existia antes, o que foi criado/alterado, os call sites (client
++components) atualizados, e o que ficou pendente (se algo ficou).//
++Este README é o índice e o status consolidado — atualizado a cada
++feature concluída.
++
++## Status geral
++
++| # | Feature | Status |
++|---|---|---|
++| 00 | Fundação (`lib/safe-action.ts`) | ✅ concluído |
++| 01 | Tags | ✅ concluído |
++| 02 | Sessão de foco (Hoje) | ✅ concluído |
++| 03 | Tarefas (Hoje) | ✅ concluído |
++| 04 | Semana (metas/hábitos) | ✅ concluído |
++| 05 | Inbox | ✅ concluído |
++| 06 | Waitlist (auth) | ✅ concluído |
++
++Legenda: ⏳ pendente/em andamento · ✅ concluído e validado (typecheck
+++ lint) · ⚠️ concluído com pendência anotada.
++
++Todas as 7 etapas estão concluídas. Ver "Validação final" mais abaixo.
++
++## Escopo desta refatoração
++
++**Dentro do escopo:**
++- Migrar toda action `'use server'` para `next-safe-action`.
++- Criar schemas Zod em `lib/validators/` para cada domínio que não tinha.
++- Atualizar todos os call sites (componentes client) para o novo formato
++  de retorno (`{ data, serverError, validationErrors }`).
++- Corrigir, no caminho, qualquer checagem de ownership ausente que a
++  migração revele (nenhuma encontrada além das já corrigidas antes desta
++  etapa — ver `delete-task.ts` e `start-focus.ts`, tratados na rodada de
++  correções de segurança anterior a esta refatoração).
++
++**Fora do escopo (não alterado nesta etapa):**
++- Substituição de cores Tailwind hardcoded por variáveis de tema.
++- Adoção de `dayjs` para datas.
++- Unificação dos dois fluxos de organização do Inbox (kanban vs botões).
++- 4 erros de lint `react-hooks/set-state-in-effect` **pré-existentes**
++  (confirmados via `git diff` — nenhum deles em arquivo tocado por esta
++  refatoração): `components/board/board-view.tsx:52`,
++  `components/dashboard/focus-time-stat.tsx:42`,
++  `components/dashboard/focus-timer.tsx:88`,
++  `components/dashboard/inbox-board.tsx:46`. São todos `setState`
++  síncrono dentro de `useEffect` — requerem revisão de lógica de
++  efeito (não de padrão de Server Action), fora do escopo desta etapa.
++- 3 warnings de `no-unused-vars` pré-existentes (`Plus` e `HabitCard`
++  em `app/(app)/semana/page.tsx`, `MoreVertical` em
++  `components/dashboard/task-row.tsx`).
++
++Esses itens continuam registrados na revisão técnica original como
++Prioridade 2/3 e não fazem parte deste patch.
++
++## Validação final
++
++- `tsc --noEmit`: **0 erros**.
++- `eslint .`: **0 erros/warnings novos** — os 4 erros e 3 warnings
++  reportados são 100% pré-existentes (confirmado por `git diff` em
++  cada arquivo apontado; nenhum deles foi tocado por esta
++  refatoração, exceto `task-row.tsx`, onde o import não-usado já
++  existia antes da minha edição).
++- **Testes:** `pnpm test` (vitest) → `No test files found`. O
++  projeto tem o script configurado mas **nenhum arquivo de teste
++  existe** no repositório — isso já era assim antes desta
++  refatoração, não é algo que esta etapa criou ou escondeu.
++- **Build (`next build`):** não foi possível concluir neste
++  ambiente — falha ao buscar as fontes `Geist`/`Geist Mono` do Google
++  Fonts (`fonts.googleapis.com`), porque o sandbox onde rodei esta
++  refatoração tem a rede restrita a um allowlist de domínios que não
++  inclui `fonts.googleapis.com`. **Confirmei que essa falha é 100%
++  ambiental, não relacionada ao código:** rodei `next build` também
++  no commit base (`4256ae0`, sem nenhuma das minhas alterações) e o
++  erro é idêntico. Em qualquer ambiente com acesso normal à internet
++  (sua máquina local ou o VPS), esse build deve funcionar
++  normalmente. Recomendo rodar `pnpm build` como o último gate antes
++  de aplicar o patch, já que eu não consegui validar esse passo
++  especificamente.
++
++## Arquivos alterados nesta refatoração
++
++Inclui tanto a refatoração arquitetural (Server Actions) quanto as
++correções de segurança/produção da rodada anterior a ela, já que
++ambas fazem parte do mesmo patch final.
++
++**Criados:**
++- `lib/validators/tag.ts`, `lib/validators/focus.ts`,
++  `lib/validators/task.ts`, `lib/validators/week.ts`,
++  `lib/validators/inbox.ts`, `lib/validators/waitlist.ts`
++- `docs/refactoring/README.md` e `docs/refactoring/00` a `06-*.md`
++- `scripts/legacy/README.md`
++
++**Removidos:**
++- `app/(dashboard)/inbox/actions.ts` (conteúdo movido, ver abaixo)
++
++**Movidos:**
++- `apply-0003.mjs`, `apply-0005.mjs`, `apply-0007.mjs`,
++  `apply-focus-session.mjs`, `apply-migration.mjs`, `check-db.mjs`,
++  `run-migration.mjs` → `scripts/legacy/`
++- `app/(dashboard)/inbox/actions.ts` → `app/(app)/inbox/_actions/inbox-crud.ts`
++
++**Modificados — infraestrutura de actions:**
++- `lib/safe-action.ts`
++
++**Modificados — actions migradas para next-safe-action:**
++- `app/(app)/board/actions.ts` (só troca de client, sem mudança de lógica)
++- `app/(app)/hoje/_actions/{complete,create,delete,update}-task.ts`,
++  `{start,pause,resume,finish}-focus.ts`, `toggle-top-priority.ts`
++- `app/(app)/semana/_actions/create-week-plan.ts`,
++  `create-week-task.ts`, `toggle-habit.ts`, `toggle-week-goal.ts`
++- `app/(app)/tags/actions.ts`
++- `app/(app)/inbox/_actions/organize-inbox-task.ts`,
++  `inbox-crud.ts` (novo caminho)
++- `app/(auth)/login/_actions/waitlist.ts`
++
++**Modificados — call sites (componentes client):**
++- `components/dashboard/{new-tag-button,tag-actions}.tsx`
++- `components/dashboard/focus-timer.tsx`,
++  `components/dashboard/focus-task-checkbox.tsx`
++- `components/dashboard/{create-task-button,task-actions,task-row}.tsx`,
++  `components/board/work-task-card.tsx`
++- `app/(app)/semana/_components/{quick-week-task,week-goal-item,week-habit-card,week-planner-dialog}.tsx`
++- `components/dashboard/{new-inbox-task-button,edit-inbox-task-modal,inbox-task-menu,complete-inbox-task-button,inbox-board,inbox-task-actions}.tsx`
++- `components/auth/waitlist-form.tsx`
++
++**Modificados — correções de segurança/produção (rodada anterior a
++esta refatoração, incluídas no mesmo patch):**
++- `app/(app)/inbox/page.tsx` (estatísticas "Capturadas hoje"/"Pendentes
++  de organizar")
++- `docker-compose.yml` (credencial, porta, timezone)
++
++## Próxima etapa
++
++Nenhuma feature pendente. Este README reflete o estado final —
++próximo passo é aplicar o `.patch` gerado a partir deste trabalho.
+diff --git a/lib/safe-action.ts b/lib/safe-action.ts
+index c4599ac..7087fe4 100644
+--- a/lib/safe-action.ts
++++ b/lib/safe-action.ts
+@@ -9,6 +9,11 @@ export const actionClient = createSafeActionClient({
+     defaultValidationErrorsShape: 'flattened',
+ })
+ 
++/**
++ * Client base para qualquer Server Action que só precisa do usuário
++ * autenticado. É o client padrão para a maioria das actions do app
++ * (tasks, tags, semana, inbox, sessão de foco...).
++ */
+ export const authActionClient = actionClient.use(async ({ next }) => {
+     const session = await auth.api.getSession({
+         headers: await headers(),
+@@ -18,15 +23,27 @@ export const authActionClient = actionClient.use(async ({ next }) => {
+         throw new Error('Não autorizado.')
+     }
+ 
+-    const [userBoard] = await db
+-        .select()
+-        .from(board)
+-        .where(eq(board.userId, session.user.id))
+-        .limit(1)
++    return next({ ctx: { user: session.user } })
++})
+ 
+-    if (!userBoard) {
+-        throw new Error('Board não encontrado.')
+-    }
++/**
++ * Extensão de authActionClient para actions do domínio Board, que
++ * também precisam do boardId do usuário (hoje, um board por usuário).
++ * Isolado do client genérico para não forçar um lookup de board em
++ * actions que nunca usam esse dado (tasks, tags, semana, etc.).
++ */
++export const authBoardActionClient = authActionClient.use(
++    async ({ next, ctx }) => {
++        const [userBoard] = await db
++            .select()
++            .from(board)
++            .where(eq(board.userId, ctx.user.id))
++            .limit(1)
+ 
+-    return next({ ctx: { user: session.user, boardId: userBoard.id } })
+-})
++        if (!userBoard) {
++            throw new Error('Board não encontrado.')
++        }
++
++        return next({ ctx: { ...ctx, boardId: userBoard.id } })
++    }
++)
+diff --git a/lib/validators/focus.ts b/lib/validators/focus.ts
+new file mode 100644
+index 0000000..1aac333
+--- /dev/null
++++ b/lib/validators/focus.ts
+@@ -0,0 +1,9 @@
++import { z } from 'zod'
++
++export const startFocusSchema = z.object({
++    taskId: z.string().min(1, 'Tarefa inválida.'),
++})
++
++export const focusSessionIdSchema = z.object({
++    sessionId: z.string().min(1, 'Sessão de foco inválida.'),
++})
+diff --git a/lib/validators/inbox.ts b/lib/validators/inbox.ts
+new file mode 100644
+index 0000000..54527cf
+--- /dev/null
++++ b/lib/validators/inbox.ts
+@@ -0,0 +1,41 @@
++import { z } from 'zod'
++
++const prioritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH'])
++
++export const organizeInboxTaskSchema = z.object({
++    taskId: z.string().min(1, 'Tarefa inválida.'),
++    destination: z.enum([
++        'TODAY_WORK',
++        'TODAY_STUDIES',
++        'TODAY_PERSONAL',
++        'WORK',
++        'STUDIES',
++        'PERSONAL',
++    ]),
++})
++
++export const createInboxTaskSchema = z.object({
++    title: z.string().trim().min(1, 'Informe o título da tarefa.'),
++    description: z.string().optional(),
++    priority: prioritySchema.default('MEDIUM'),
++    plannedDate: z.string().optional(),
++    tagIds: z.array(z.string()).default([]),
++})
++
++export const updateInboxTaskSchema = z.object({
++    taskId: z.string().min(1, 'Tarefa inválida.'),
++    title: z.string().trim().min(1, 'Informe o título da tarefa.'),
++    description: z.string().optional(),
++    priority: prioritySchema,
++    plannedDate: z.string().optional(),
++    tagIds: z.array(z.string()).default([]),
++})
++
++export const inboxTaskIdSchema = z.object({
++    taskId: z.string().min(1, 'Tarefa inválida.'),
++})
++
++export const moveInboxTaskSchema = z.object({
++    taskId: z.string().min(1, 'Tarefa inválida.'),
++    inboxStage: z.enum(['ARRIVED', 'ORGANIZE', 'NEXT', 'ORGANIZED']),
++})
+diff --git a/lib/validators/tag.ts b/lib/validators/tag.ts
+new file mode 100644
+index 0000000..64abc68
+--- /dev/null
++++ b/lib/validators/tag.ts
+@@ -0,0 +1,12 @@
++import { z } from 'zod'
++
++export const tagNameSchema = z
++    .string()
++    .min(1, 'Informe o nome da tag.')
++    .max(60, 'O nome deve ter no máximo 60 caracteres.')
++
++export const tagColorSchema = z
++    .string()
++    .min(1, 'Selecione uma cor.')
++
++export const tagIdSchema = z.string().min(1, 'Tag inválida.')
+diff --git a/lib/validators/task.ts b/lib/validators/task.ts
+new file mode 100644
+index 0000000..a71cbe9
+--- /dev/null
++++ b/lib/validators/task.ts
+@@ -0,0 +1,56 @@
++import { z } from 'zod'
++
++export const taskIdSchema = z.object({
++    taskId: z.string().min(1, 'Tarefa inválida.'),
++})
++
++const taskTitleSchema = z
++    .string()
++    .trim()
++    .min(1, 'O título da tarefa é obrigatório.')
++
++const taskAreaSchema = z.enum(['WORK', 'STUDIES', 'PERSONAL'])
++const taskPrioritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH'])
++
++/**
++ * Duas variantes: enviar para o Inbox (sem área/prioridade/data) ou
++ * direto para Hoje/Semana (exige área, prioridade e data planejada).
++ * Substitui a checagem manual `if (!input.area || ...) throw` do
++ * arquivo original por validação declarativa.
++ */
++export const createTaskSchema = z.discriminatedUnion('destination', [
++    z.object({
++        destination: z.literal('INBOX'),
++        title: taskTitleSchema,
++        description: z.string().optional(),
++    }),
++    z.object({
++        destination: z.literal('TODAY'),
++        title: taskTitleSchema,
++        description: z.string().optional(),
++        area: taskAreaSchema,
++        priority: taskPrioritySchema,
++        plannedDate: z.string().min(1, 'Selecione uma data.'),
++        plannedTime: z.string().optional(),
++    }),
++])
++
++export const updateTaskSchema = z.object({
++    taskId: z.string().min(1, 'Tarefa inválida.'),
++    title: taskTitleSchema,
++    description: z.string().optional(),
++    plannedTime: z.string().optional(),
++})
++
++export const completeTaskSchema = z.object({
++    taskId: z.string().min(1, 'Tarefa inválida.'),
++    completed: z.boolean(),
++    returnStatus: z
++        .enum(['TODAY', 'BACKLOG', 'WEEK', 'DOING'])
++        .default('TODAY'),
++})
++
++export const toggleTopPrioritySchema = z.object({
++    taskId: z.string().min(1, 'Tarefa inválida.'),
++    currentValue: z.boolean(),
++})
+diff --git a/lib/validators/waitlist.ts b/lib/validators/waitlist.ts
+new file mode 100644
+index 0000000..78f96cb
+--- /dev/null
++++ b/lib/validators/waitlist.ts
+@@ -0,0 +1,12 @@
++import { z } from 'zod'
++
++export const addToWaitlistSchema = z.object({
++    name: z.string().trim().min(1, 'Informe seu nome.'),
++    email: z
++        .string()
++        .trim()
++        .toLowerCase()
++        .min(1, 'Informe seu e-mail.')
++        .email('Informe um e-mail válido.'),
++    phone: z.string().trim().min(1, 'Informe seu WhatsApp.'),
++})
+diff --git a/lib/validators/week.ts b/lib/validators/week.ts
+new file mode 100644
+index 0000000..fd50ae3
+--- /dev/null
++++ b/lib/validators/week.ts
+@@ -0,0 +1,32 @@
++import { z } from 'zod'
++
++const areaSchema = z.enum(['WORK', 'STUDIES', 'PERSONAL'])
++
++export const createWeekPlanSchema = z.object({
++    weekStart: z.string().min(1, 'Semana inválida.'),
++    goals: z.array(z.string()).default([]),
++    habits: z
++        .array(
++            z.object({
++                title: z.string(),
++                targetDays: z.number().int().min(1).max(7),
++            })
++        )
++        .default([]),
++})
++
++export const createWeekTaskSchema = z.object({
++    title: z.string().trim().min(1, 'O título da tarefa é obrigatório.'),
++    area: areaSchema,
++    plannedDate: z.string().min(1, 'Selecione uma data.'),
++})
++
++export const toggleHabitSchema = z.object({
++    habitId: z.string().min(1, 'Hábito inválido.'),
++    date: z.string().min(1, 'Data inválida.'),
++})
++
++export const toggleWeekGoalSchema = z.object({
++    goalId: z.string().min(1, 'Meta inválida.'),
++    completed: z.boolean(),
++})
+diff --git a/scripts/legacy/README.md b/scripts/legacy/README.md
+new file mode 100644
+index 0000000..0b119b6
+--- /dev/null
++++ b/scripts/legacy/README.md
+@@ -0,0 +1,16 @@
++# ⚠️ Scripts legados — não usar
++
++Estes scripts aplicavam migrations manualmente via `sql.unsafe()`, **fora**
++da tabela de controle do Drizzle Kit (`__drizzle_migrations`). Eles foram
++usados no passado, mas criam risco real de dessincronia entre o estado do
++banco e o histórico de migrations — especialmente com deploy automatizado.
++
++**Fluxo correto, sempre:**
++
++```bash
++pnpm db:generate   # gera a migration a partir do schema
++pnpm db:migrate     # aplica via drizzle-kit, registrando no histórico
++```
++
++Não execute nenhum arquivo desta pasta em produção. Eles estão aqui apenas
++como referência histórica e serão removidos numa limpeza futura.
+diff --git a/apply-0003.mjs b/scripts/legacy/apply-0003.mjs
+similarity index 100%
+rename from apply-0003.mjs
+rename to scripts/legacy/apply-0003.mjs
+diff --git a/apply-0005.mjs b/scripts/legacy/apply-0005.mjs
+similarity index 100%
+rename from apply-0005.mjs
+rename to scripts/legacy/apply-0005.mjs
+diff --git a/apply-0007.mjs b/scripts/legacy/apply-0007.mjs
+similarity index 100%
+rename from apply-0007.mjs
+rename to scripts/legacy/apply-0007.mjs
+diff --git a/apply-focus-session.mjs b/scripts/legacy/apply-focus-session.mjs
+similarity index 100%
+rename from apply-focus-session.mjs
+rename to scripts/legacy/apply-focus-session.mjs
+diff --git a/apply-migration.mjs b/scripts/legacy/apply-migration.mjs
+similarity index 100%
+rename from apply-migration.mjs
+rename to scripts/legacy/apply-migration.mjs
+diff --git a/check-db.mjs b/scripts/legacy/check-db.mjs
+similarity index 100%
+rename from check-db.mjs
+rename to scripts/legacy/check-db.mjs
+diff --git a/run-migration.mjs b/scripts/legacy/run-migration.mjs
+similarity index 100%
+rename from run-migration.mjs
+rename to scripts/legacy/run-migration.mjs

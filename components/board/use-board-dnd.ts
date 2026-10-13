@@ -22,6 +22,7 @@ export interface CardChecklistItemOption {
 }
 
 export type BoardCard = Card & {
+    requirementTitle?: string | null
     tags: CardTagOption[]
     checklistItems: CardChecklistItemOption[]
 }

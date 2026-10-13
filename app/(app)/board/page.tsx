@@ -12,6 +12,11 @@ import { eq, asc, inArray } from 'drizzle-orm'
 import { BoardView } from '@/components/board/board-view'
 import { BoardCard, ColumnWithCards } from '@/components/board/use-board-dnd'
 import { getPriorityTagId } from '@/lib/board/priority-tag'
+import { client as clientTable } from '@/db/schema/client'
+import { project } from '@/db/schema/project'
+import { requirementSurvey } from '@/db/schema/requirement-survey'
+import { projectRequirement } from '@/db/schema/project-requirement'
+import { meeting } from '@/db/schema/meeting'
 
 export default async function BoardPage() {
     const session = await auth.api.getSession({
@@ -76,6 +81,7 @@ export default async function BoardPage() {
     const rawCards = await db
         .select({
             c: card,
+            requirementTitle: projectRequirement.title,
         })
         .from(card)
         .innerJoin(
@@ -85,6 +91,7 @@ export default async function BoardPage() {
                 boardColumn.id
             )
         )
+        .leftJoin(projectRequirement, eq(card.requirementId, projectRequirement.id))
         .where(
             eq(
                 boardColumn.boardId,
@@ -166,12 +173,13 @@ export default async function BoardPage() {
         BoardCard[]
     > = {}
 
-    for (const { c } of rawCards) {
+    for (const { c, requirementTitle } of rawCards) {
         ; (
             cardsByColumnId[c.columnId] ??=
             []
         ).push({
             ...c,
+            requirementTitle: requirementTitle ?? null,
             tags: tagsByCardId.get(c.id) ?? [],
             checklistItems: checklistByCardId.get(c.id) ?? [],
         })
@@ -185,6 +193,14 @@ export default async function BoardPage() {
                 column.id
                 ] ?? [],
         }))
+
+    const [clients, projects, surveys, requirements, meetings] = await Promise.all([
+        db.select().from(clientTable).where(eq(clientTable.userId, session.user.id)).orderBy(asc(clientTable.name)),
+        db.select().from(project).where(eq(project.userId, session.user.id)).orderBy(asc(project.name)),
+        db.select().from(requirementSurvey).where(eq(requirementSurvey.userId, session.user.id)),
+        db.select().from(projectRequirement).where(eq(projectRequirement.userId, session.user.id)).orderBy(asc(projectRequirement.createdAt)),
+        db.select().from(meeting).where(eq(meeting.userId, session.user.id)).orderBy(asc(meeting.meetingDate)),
+    ])
 
     // "Prioridade máxima" = cards pendentes (coluna não é DONE) com a
     // tag de prioridade máxima. Ver lib/board/priority-tag.ts.
@@ -208,6 +224,7 @@ export default async function BoardPage() {
             availableTags={userTags}
             priorityCardsCount={priorityCardsCount}
             hasPriorityTag={priorityTagId !== null}
+            workData={{ clients, projects, surveys, requirements, meetings, linkedRequirementIds: rawCards.flatMap(({ c }) => c.requirementId ? [c.requirementId] : []) }}
         />
     )
 }

@@ -1,0 +1,3794 @@
+diff --git a/app/(app)/board/actions.ts b/app/(app)/board/actions.ts
+index 9fae254..3ffd1c8 100644
+--- a/app/(app)/board/actions.ts
++++ b/app/(app)/board/actions.ts
+@@ -5,6 +5,9 @@ import { revalidatePath } from 'next/cache'
+ import { db } from '@/db'
+ import { boardColumn } from '@/db/schema/column'
+ import { card } from '@/db/schema/card'
++import { cardTag } from '@/db/schema/card-tag'
++import { cardChecklistItem } from '@/db/schema/card-checklist-item'
++import { tag } from '@/db/schema/tag'
+ import { authBoardActionClient } from '@/lib/safe-action'
+ import { eq, max, and, asc, ne } from 'drizzle-orm'
+ import {
+@@ -12,7 +15,14 @@ import {
+     columnTitleSchema,
+     columnTypeSchema,
+ } from '@/lib/validators/column'
+-import { cardNameSchema } from '@/lib/validators/card'
++import {
++    cardNameSchema,
++    createChecklistItemSchema,
++    deleteChecklistItemSchema,
++    toggleCardTagSchema,
++    toggleChecklistItemSchema,
++    updateCardDetailsSchema,
++} from '@/lib/validators/card'
+ 
+ const createColumnSchema = z.object({
+     title: columnTitleSchema,
+@@ -28,6 +38,7 @@ const updateColumnSchema = z.object({
+ 
+ const deleteColumnSchema = z.object({
+     id: z.string().min(1),
++    targetColumnId: z.string().min(1).optional(),
+ })
+ 
+ const reorderColumnsSchema = z.object({
+@@ -124,7 +135,68 @@ export const deleteColumn = authBoardActionClient
+ 
+         if (!col) throw new Error('Coluna não encontrada.')
+ 
+-        await db.delete(boardColumn).where(eq(boardColumn.id, parsedInput.id))
++        const cardsInColumn = await db
++            .select({ id: card.id })
++            .from(card)
++            .where(eq(card.columnId, parsedInput.id))
++
++        if (cardsInColumn.length > 0) {
++            if (!parsedInput.targetColumnId) {
++                throw new Error(
++                    `Esta coluna possui ${cardsInColumn.length} tarefa(s). Selecione para onde movê-las antes de excluir.`
++                )
++            }
++
++            if (parsedInput.targetColumnId === parsedInput.id) {
++                throw new Error(
++                    'A coluna de destino não pode ser a mesma que está sendo excluída.'
++                )
++            }
++
++            const [targetCol] = await db
++                .select({ id: boardColumn.id })
++                .from(boardColumn)
++                .where(
++                    and(
++                        eq(boardColumn.id, parsedInput.targetColumnId),
++                        eq(boardColumn.boardId, ctx.boardId)
++                    )
++                )
++                .limit(1)
++
++            if (!targetCol) {
++                throw new Error('Coluna de destino não encontrada.')
++            }
++
++            await db.transaction(async (tx) => {
++                const [result] = await tx
++                    .select({ maxPos: max(card.position) })
++                    .from(card)
++                    .where(eq(card.columnId, parsedInput.targetColumnId!))
++
++                let nextPosition = (result?.maxPos ?? -1) + 1
++
++                for (const item of cardsInColumn) {
++                    await tx
++                        .update(card)
++                        .set({
++                            columnId: parsedInput.targetColumnId,
++                            position: nextPosition,
++                        })
++                        .where(eq(card.id, item.id))
++
++                    nextPosition += 1
++                }
++
++                await tx
++                    .delete(boardColumn)
++                    .where(eq(boardColumn.id, parsedInput.id))
++            })
++        } else {
++            await db
++                .delete(boardColumn)
++                .where(eq(boardColumn.id, parsedInput.id))
++        }
+ 
+         revalidatePath('/board')
+     })
+@@ -347,3 +419,156 @@ export const moveCard = authBoardActionClient
+ 
+         revalidatePath('/board')
+     })
++
++/**
++ * Verifica ownership do card via join com boardColumn (mesmo padrão
++ * usado em updateCard/deleteCard/moveCard acima).
++ */
++async function findOwnedCard(cardId: string, boardId: string) {
++    const [row] = await db
++        .select({ id: card.id })
++        .from(card)
++        .innerJoin(boardColumn, eq(card.columnId, boardColumn.id))
++        .where(and(eq(card.id, cardId), eq(boardColumn.boardId, boardId)))
++        .limit(1)
++
++    return row
++}
++
++export const updateCardDetails = authBoardActionClient
++    .inputSchema(updateCardDetailsSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const owned = await findOwnedCard(parsedInput.cardId, ctx.boardId)
++
++        if (!owned) throw new Error('Card não encontrado.')
++
++        const updates: {
++            description?: string | null
++            dueDate?: Date | null
++        } = {}
++
++        if (parsedInput.description !== undefined) {
++            updates.description = parsedInput.description?.trim() || null
++        }
++
++        if (parsedInput.dueDate !== undefined) {
++            updates.dueDate = parsedInput.dueDate
++                ? new Date(`${parsedInput.dueDate}T00:00:00`)
++                : null
++        }
++
++        await db.update(card).set(updates).where(eq(card.id, parsedInput.cardId))
++
++        revalidatePath('/board')
++    })
++
++export const toggleCardTag = authBoardActionClient
++    .inputSchema(toggleCardTagSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const owned = await findOwnedCard(parsedInput.cardId, ctx.boardId)
++
++        if (!owned) throw new Error('Card não encontrado.')
++
++        const [ownedTag] = await db
++            .select({ id: tag.id })
++            .from(tag)
++            .where(and(eq(tag.id, parsedInput.tagId), eq(tag.userId, ctx.user.id)))
++            .limit(1)
++
++        if (!ownedTag) throw new Error('Tag não encontrada.')
++
++        if (parsedInput.attach) {
++            await db
++                .insert(cardTag)
++                .values({
++                    cardId: parsedInput.cardId,
++                    tagId: parsedInput.tagId,
++                })
++                .onConflictDoNothing()
++        } else {
++            await db
++                .delete(cardTag)
++                .where(
++                    and(
++                        eq(cardTag.cardId, parsedInput.cardId),
++                        eq(cardTag.tagId, parsedInput.tagId)
++                    )
++                )
++        }
++
++        revalidatePath('/board')
++    })
++
++export const createChecklistItem = authBoardActionClient
++    .inputSchema(createChecklistItemSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const owned = await findOwnedCard(parsedInput.cardId, ctx.boardId)
++
++        if (!owned) throw new Error('Card não encontrado.')
++
++        const [result] = await db
++            .select({ maxPos: max(cardChecklistItem.position) })
++            .from(cardChecklistItem)
++            .where(eq(cardChecklistItem.cardId, parsedInput.cardId))
++
++        const nextPosition = (result?.maxPos ?? -1) + 1
++
++        await db.insert(cardChecklistItem).values({
++            cardId: parsedInput.cardId,
++            title: parsedInput.title,
++            position: nextPosition,
++        })
++
++        revalidatePath('/board')
++    })
++
++export const toggleChecklistItem = authBoardActionClient
++    .inputSchema(toggleChecklistItemSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const [row] = await db
++            .select({ id: cardChecklistItem.id })
++            .from(cardChecklistItem)
++            .innerJoin(card, eq(cardChecklistItem.cardId, card.id))
++            .innerJoin(boardColumn, eq(card.columnId, boardColumn.id))
++            .where(
++                and(
++                    eq(cardChecklistItem.id, parsedInput.id),
++                    eq(boardColumn.boardId, ctx.boardId)
++                )
++            )
++            .limit(1)
++
++        if (!row) throw new Error('Item não encontrado.')
++
++        await db
++            .update(cardChecklistItem)
++            .set({ completed: parsedInput.completed })
++            .where(eq(cardChecklistItem.id, parsedInput.id))
++
++        revalidatePath('/board')
++    })
++
++export const deleteChecklistItem = authBoardActionClient
++    .inputSchema(deleteChecklistItemSchema)
++    .action(async ({ parsedInput, ctx }) => {
++        const [row] = await db
++            .select({ id: cardChecklistItem.id })
++            .from(cardChecklistItem)
++            .innerJoin(card, eq(cardChecklistItem.cardId, card.id))
++            .innerJoin(boardColumn, eq(card.columnId, boardColumn.id))
++            .where(
++                and(
++                    eq(cardChecklistItem.id, parsedInput.id),
++                    eq(boardColumn.boardId, ctx.boardId)
++                )
++            )
++            .limit(1)
++
++        if (!row) throw new Error('Item não encontrado.')
++
++        await db
++            .delete(cardChecklistItem)
++            .where(eq(cardChecklistItem.id, parsedInput.id))
++
++        revalidatePath('/board')
++    })
+diff --git a/app/(app)/board/page.tsx b/app/(app)/board/page.tsx
+index a18b8bb..dacf3e3 100644
+--- a/app/(app)/board/page.tsx
++++ b/app/(app)/board/page.tsx
+@@ -5,10 +5,13 @@ import { db } from '@/db'
+ import { board } from '@/db/schema/board'
+ import { boardColumn } from '@/db/schema/column'
+ import { card } from '@/db/schema/card'
+-import { eq, asc } from 'drizzle-orm'
++import { cardTag } from '@/db/schema/card-tag'
++import { cardChecklistItem } from '@/db/schema/card-checklist-item'
++import { tag } from '@/db/schema/tag'
++import { eq, asc, inArray } from 'drizzle-orm'
+ import { BoardView } from '@/components/board/board-view'
+-import { ColumnWithCards } from '@/components/board/use-board-dnd'
+-import type { Card } from '@/db/schema/card'
++import { BoardCard, ColumnWithCards } from '@/components/board/use-board-dnd'
++import { getPriorityTagId } from '@/lib/board/priority-tag'
+ 
+ export default async function BoardPage() {
+     const session = await auth.api.getSession({
+@@ -92,16 +95,86 @@ export default async function BoardPage() {
+             asc(card.position)
+         )
+ 
++    const cardIds = rawCards.map(({ c }) => c.id)
++
++    const [userTags, cardTagRows, checklistRows, priorityTagId] =
++        await Promise.all([
++            db
++                .select()
++                .from(tag)
++                .where(eq(tag.userId, session.user.id))
++                .orderBy(asc(tag.name)),
++
++            cardIds.length > 0
++                ? db
++                    .select({
++                        cardId: cardTag.cardId,
++                        id: tag.id,
++                        name: tag.name,
++                        color: tag.color,
++                    })
++                    .from(cardTag)
++                    .innerJoin(tag, eq(cardTag.tagId, tag.id))
++                    .where(inArray(cardTag.cardId, cardIds))
++                : Promise.resolve([]),
++
++            cardIds.length > 0
++                ? db
++                    .select()
++                    .from(cardChecklistItem)
++                    .where(inArray(cardChecklistItem.cardId, cardIds))
++                    .orderBy(asc(cardChecklistItem.position))
++                : Promise.resolve([]),
++
++            getPriorityTagId(session.user.id),
++        ])
++
++    const tagsByCardId = new Map<
++        string,
++        Array<{ id: string; name: string; color: string }>
++    >()
++
++    for (const row of cardTagRows) {
++        const current = tagsByCardId.get(row.cardId) ?? []
++        current.push({ id: row.id, name: row.name, color: row.color })
++        tagsByCardId.set(row.cardId, current)
++    }
++
++    const checklistByCardId = new Map<
++        string,
++        Array<{
++            id: string
++            title: string
++            completed: boolean
++            position: number
++        }>
++    >()
++
++    for (const item of checklistRows) {
++        const current = checklistByCardId.get(item.cardId) ?? []
++        current.push({
++            id: item.id,
++            title: item.title,
++            completed: item.completed,
++            position: item.position,
++        })
++        checklistByCardId.set(item.cardId, current)
++    }
++
+     const cardsByColumnId: Record<
+         string,
+-        Card[]
++        BoardCard[]
+     > = {}
+ 
+     for (const { c } of rawCards) {
+         ; (
+             cardsByColumnId[c.columnId] ??=
+             []
+-        ).push(c)
++        ).push({
++            ...c,
++            tags: tagsByCardId.get(c.id) ?? [],
++            checklistItems: checklistByCardId.get(c.id) ?? [],
++        })
+     }
+ 
+     const columnsWithCards: ColumnWithCards[] =
+@@ -113,10 +186,28 @@ export default async function BoardPage() {
+                 ] ?? [],
+         }))
+ 
++    // "Prioridade máxima" = cards pendentes (coluna não é DONE) com a
++    // tag de prioridade máxima. Ver lib/board/priority-tag.ts.
++    const priorityCardsCount = priorityTagId
++        ? columnsWithCards
++            .filter((column) => column.type !== 'DONE')
++            .reduce(
++                (total, column) =>
++                    total +
++                    column.cards.filter((c) =>
++                        c.tags.some((t) => t.id === priorityTagId)
++                    ).length,
++                0
++            )
++        : 0
++
+     return (
+         <BoardView
+             board={userBoard}
+             columns={columnsWithCards}
++            availableTags={userTags}
++            priorityCardsCount={priorityCardsCount}
++            hasPriorityTag={priorityTagId !== null}
+         />
+     )
+ }
+\ No newline at end of file
+diff --git a/components/board/board-view.tsx b/components/board/board-view.tsx
+index 3bc973f..3f32c58 100644
+--- a/components/board/board-view.tsx
++++ b/components/board/board-view.tsx
+@@ -23,19 +23,27 @@ import { Board } from '@/db/schema/board'
+ 
+ import { ColumnCard } from './column-card'
+ import { CreateColumnButton } from './create-column-button'
++import { CardDetailsPanel } from './card-details-panel'
+ 
+ import {
+     useBoardDnd,
+     ColumnWithCards,
++    CardTagOption,
+ } from './use-board-dnd'
+ 
+ interface BoardViewProps {
+     board: Board
+     columns: ColumnWithCards[]
++    availableTags: CardTagOption[]
++    priorityCardsCount: number
++    hasPriorityTag: boolean
+ }
+ 
+ export function BoardView({
+     columns: initialColumns,
++    availableTags,
++    priorityCardsCount,
++    hasPriorityTag,
+ }: BoardViewProps) {
+     /**
+      * Impede o DndContext de ser renderizado no servidor.
+@@ -60,6 +68,23 @@ export function BoardView({
+     } = useBoardDnd(initialColumns)
+ 
+     const [search, setSearch] = useState('')
++    const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
++
++    const allColumns = useMemo(
++        () => columns.map((c) => ({ id: c.id, title: c.title, type: c.type })),
++        [columns]
++    )
++
++    const selectedCard = useMemo(() => {
++        if (!selectedCardId) return null
++
++        for (const column of columns) {
++            const found = column.cards.find((c) => c.id === selectedCardId)
++            if (found) return found
++        }
++
++        return null
++    }, [columns, selectedCardId])
+ 
+     const sensors = useSensors(
+         useSensor(PointerSensor, {
+@@ -185,8 +210,14 @@ export function BoardView({
+                             </p>
+ 
+                             <p className="text-xl font-bold text-slate-900">
+-                                0
++                                {hasPriorityTag ? priorityCardsCount : '—'}
+                             </p>
++
++                            {!hasPriorityTag && (
++                                <p className="mt-0.5 text-[11px] text-slate-400">
++                                    Crie a tag &ldquo;Prioridade máxima&rdquo;
++                                </p>
++                            )}
+                         </div>
+ 
+                     </div>
+@@ -288,6 +319,9 @@ export function BoardView({
+                                             cards={
+                                                 column.cards
+                                             }
++                                            allColumns={allColumns}
++                                            availableTags={availableTags}
++                                            onOpenCard={setSelectedCardId}
+                                         />
+ 
+                                     )
+@@ -328,6 +362,16 @@ export function BoardView({
+ 
+             </main>
+ 
++            <CardDetailsPanel
++                card={selectedCard}
++                open={selectedCard !== null}
++                onOpenChange={(open) => {
++                    if (!open) setSelectedCardId(null)
++                }}
++                columns={allColumns}
++                availableTags={availableTags}
++            />
++
+         </div>
+     )
+ }
+\ No newline at end of file
+diff --git a/components/board/card-details-panel.tsx b/components/board/card-details-panel.tsx
+new file mode 100644
+index 0000000..ab8123f
+--- /dev/null
++++ b/components/board/card-details-panel.tsx
+@@ -0,0 +1,479 @@
++'use client'
++
++import { useEffect, useRef, useState } from 'react'
++import { useAction } from 'next-safe-action/hooks'
++import { Loader2, Plus, Trash2, Check } from 'lucide-react'
++
++import {
++    Sheet,
++    SheetContent,
++    SheetHeader,
++    SheetTitle,
++} from '@/components/ui/sheet'
++
++import {
++    updateCard,
++    moveCard,
++    toggleCardTag,
++    updateCardDetails,
++    createChecklistItem,
++    toggleChecklistItem,
++    deleteChecklistItem,
++} from '@/app/(app)/board/actions'
++
++import { BoardCard, CardTagOption } from './use-board-dnd'
++
++/**
++ * Move um card para o fim da coluna de destino. `moveCard` já faz o
++ * clamp internamente (Math.min(targetPosition, targetCards.length)),
++ * então basta enviar um número maior que qualquer coluna real pode
++ * ter para cair sempre no final — sem precisar saber a contagem exata
++ * de cards da coluna de destino aqui no client.
++ */
++const APPEND_TO_END = 1_000_000
++
++type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
++
++function useSaveStatus() {
++    const [status, setStatus] = useState<SaveStatus>('idle')
++    const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
++
++    function markSaving() {
++        if (timeoutRef.current) clearTimeout(timeoutRef.current)
++        setStatus('saving')
++    }
++
++    function markSaved() {
++        setStatus('saved')
++        timeoutRef.current = setTimeout(() => setStatus('idle'), 1500)
++    }
++
++    function markError() {
++        setStatus('error')
++        timeoutRef.current = setTimeout(() => setStatus('idle'), 2500)
++    }
++
++    useEffect(() => {
++        return () => {
++            if (timeoutRef.current) clearTimeout(timeoutRef.current)
++        }
++    }, [])
++
++    return { status, markSaving, markSaved, markError }
++}
++
++function SaveIndicator({ status }: { status: SaveStatus }) {
++    if (status === 'idle') return null
++
++    if (status === 'saving') {
++        return (
++            <span className="flex items-center gap-1 text-xs text-slate-400">
++                <Loader2 className="size-3 animate-spin" />
++                Salvando...
++            </span>
++        )
++    }
++
++    if (status === 'saved') {
++        return <span className="text-xs text-emerald-600">Salvo</span>
++    }
++
++    return <span className="text-xs text-red-600">Erro ao salvar</span>
++}
++
++interface CardDetailsPanelProps {
++    card: BoardCard | null
++    open: boolean
++    onOpenChange: (open: boolean) => void
++    columns: Array<{ id: string; title: string }>
++    availableTags: CardTagOption[]
++}
++
++export function CardDetailsPanel({
++    card,
++    open,
++    onOpenChange,
++    columns,
++    availableTags,
++}: CardDetailsPanelProps) {
++    if (!card) {
++        return (
++            <Sheet open={open} onOpenChange={onOpenChange}>
++                <SheetContent />
++            </Sheet>
++        )
++    }
++
++    return (
++        <Sheet open={open} onOpenChange={onOpenChange}>
++            <SheetContent className="flex flex-col" key={card.id}>
++                <SheetHeader>
++                    <TitleField card={card} />
++                </SheetHeader>
++
++                <div className="flex-1 overflow-y-auto px-5 py-4">
++                    <StatusField card={card} columns={columns} />
++                    <TagsField card={card} availableTags={availableTags} />
++                    <DueDateField card={card} />
++                    <DescriptionField card={card} />
++                    <ChecklistField card={card} />
++                </div>
++            </SheetContent>
++        </Sheet>
++    )
++}
++
++function FieldRow({
++    label,
++    status,
++    children,
++}: {
++    label: string
++    status?: SaveStatus
++    children: React.ReactNode
++}) {
++    return (
++        <div className="mb-6">
++            <div className="mb-2 flex items-center justify-between">
++                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
++                    {label}
++                </p>
++                {status && <SaveIndicator status={status} />}
++            </div>
++            {children}
++        </div>
++    )
++}
++
++function TitleField({ card }: { card: BoardCard }) {
++    const [value, setValue] = useState(card.name)
++    const { status, markSaving, markSaved, markError } = useSaveStatus()
++
++    const { execute } = useAction(updateCard, {
++        onSuccess: markSaved,
++        onError: () => {
++            setValue(card.name)
++            markError()
++        },
++    })
++
++    function handleBlur() {
++        const trimmed = value.trim()
++        if (!trimmed || trimmed === card.name) {
++            setValue(card.name)
++            return
++        }
++        markSaving()
++        execute({ id: card.id, name: trimmed })
++    }
++
++    return (
++        <div className="flex items-center justify-between gap-2">
++            <SheetTitle asChild>
++                <input
++                    value={value}
++                    onChange={(e) => setValue(e.target.value)}
++                    onBlur={handleBlur}
++                    onKeyDown={(e) => {
++                        if (e.key === 'Enter') e.currentTarget.blur()
++                    }}
++                    className="w-full border-none bg-transparent p-0 text-base font-semibold text-slate-900 outline-none"
++                    aria-label="Título do card"
++                />
++            </SheetTitle>
++            <SaveIndicator status={status} />
++        </div>
++    )
++}
++
++function StatusField({
++    card,
++    columns,
++}: {
++    card: BoardCard
++    columns: Array<{ id: string; title: string }>
++}) {
++    const { status, markSaving, markSaved, markError } = useSaveStatus()
++
++    const { execute } = useAction(moveCard, {
++        onSuccess: markSaved,
++        onError: markError,
++    })
++
++    function handleChange(targetColumnId: string) {
++        if (targetColumnId === card.columnId) return
++        markSaving()
++        execute({
++            cardId: card.id,
++            targetColumnId,
++            targetPosition: APPEND_TO_END,
++        })
++    }
++
++    return (
++        <FieldRow label="Status" status={status}>
++            <select
++                value={card.columnId}
++                onChange={(e) => handleChange(e.target.value)}
++                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
++            >
++                {columns.map((column) => (
++                    <option key={column.id} value={column.id}>
++                        {column.title}
++                    </option>
++                ))}
++            </select>
++        </FieldRow>
++    )
++}
++
++function TagsField({
++    card,
++    availableTags,
++}: {
++    card: BoardCard
++    availableTags: CardTagOption[]
++}) {
++    const { status, markSaving, markSaved, markError } = useSaveStatus()
++
++    const { execute } = useAction(toggleCardTag, {
++        onSuccess: markSaved,
++        onError: markError,
++    })
++
++    const attachedIds = new Set(card.tags.map((t) => t.id))
++
++    function handleToggle(tagId: string) {
++        markSaving()
++        execute({
++            cardId: card.id,
++            tagId,
++            attach: !attachedIds.has(tagId),
++        })
++    }
++
++    return (
++        <FieldRow label="Tags" status={status}>
++            {availableTags.length === 0 ? (
++                <p className="text-sm text-slate-400">
++                    Você ainda não criou tags.
++                </p>
++            ) : (
++                <div className="flex flex-wrap gap-2">
++                    {availableTags.map((t) => {
++                        const active = attachedIds.has(t.id)
++                        return (
++                            <button
++                                key={t.id}
++                                type="button"
++                                onClick={() => handleToggle(t.id)}
++                                className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
++                                    active
++                                        ? 'border-slate-900 bg-slate-900 text-white'
++                                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
++                                }`}
++                            >
++                                <span
++                                    className="size-2.5 rounded-full"
++                                    style={{ backgroundColor: t.color }}
++                                />
++                                {t.name}
++                            </button>
++                        )
++                    })}
++                </div>
++            )}
++        </FieldRow>
++    )
++}
++
++function DueDateField({ card }: { card: BoardCard }) {
++    const { status, markSaving, markSaved, markError } = useSaveStatus()
++
++    const { execute } = useAction(updateCardDetails, {
++        onSuccess: markSaved,
++        onError: markError,
++    })
++
++    const initialValue = card.dueDate
++        ? new Date(card.dueDate).toISOString().slice(0, 10)
++        : ''
++
++    function handleChange(value: string) {
++        markSaving()
++        execute({ cardId: card.id, dueDate: value || null })
++    }
++
++    return (
++        <FieldRow label="Prazo" status={status}>
++            <input
++                type="date"
++                defaultValue={initialValue}
++                onChange={(e) => handleChange(e.target.value)}
++                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
++            />
++        </FieldRow>
++    )
++}
++
++function DescriptionField({ card }: { card: BoardCard }) {
++    const [value, setValue] = useState(card.description ?? '')
++    const { status, markSaving, markSaved, markError } = useSaveStatus()
++
++    const { execute } = useAction(updateCardDetails, {
++        onSuccess: markSaved,
++        onError: markError,
++    })
++
++    function save() {
++        if (value === (card.description ?? '')) return
++        markSaving()
++        execute({ cardId: card.id, description: value || null })
++    }
++
++    return (
++        <FieldRow label="Descrição" status={status}>
++            <textarea
++                value={value}
++                onChange={(e) => setValue(e.target.value)}
++                onBlur={save}
++                onKeyDown={(e) => {
++                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
++                        e.currentTarget.blur()
++                    }
++                }}
++                placeholder="Adicione detalhes..."
++                rows={4}
++                className="w-full resize-none rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
++            />
++        </FieldRow>
++    )
++}
++
++function ChecklistField({ card }: { card: BoardCard }) {
++    const [newItemTitle, setNewItemTitle] = useState('')
++    const { status, markSaving, markSaved, markError } = useSaveStatus()
++
++    const { execute: execToggle } = useAction(toggleChecklistItem, {
++        onSuccess: markSaved,
++        onError: markError,
++    })
++
++    const { execute: execDelete } = useAction(deleteChecklistItem, {
++        onSuccess: markSaved,
++        onError: markError,
++    })
++
++    const { execute: execCreate, isExecuting: isCreating } = useAction(
++        createChecklistItem,
++        {
++            onSuccess: () => {
++                markSaved()
++                setNewItemTitle('')
++            },
++            onError: markError,
++        }
++    )
++
++    const items = [...card.checklistItems].sort(
++        (a, b) => a.position - b.position
++    )
++
++    const completedCount = items.filter((i) => i.completed).length
++
++    function handleAdd() {
++        const trimmed = newItemTitle.trim()
++        if (!trimmed) return
++        markSaving()
++        execCreate({ cardId: card.id, title: trimmed })
++    }
++
++    return (
++        <FieldRow
++            label={`Checklist ${
++                items.length > 0 ? `(${completedCount}/${items.length})` : ''
++            }`}
++            status={status}
++        >
++            <div className="space-y-1.5">
++                {items.map((item) => (
++                    <div
++                        key={item.id}
++                        className="group flex items-center gap-2 rounded-lg px-1 py-1.5 hover:bg-slate-50"
++                    >
++                        <button
++                            type="button"
++                            onClick={() => {
++                                markSaving()
++                                execToggle({
++                                    id: item.id,
++                                    completed: !item.completed,
++                                })
++                            }}
++                            className={`flex size-5 shrink-0 items-center justify-center rounded-md border transition ${
++                                item.completed
++                                    ? 'border-blue-600 bg-blue-600 text-white'
++                                    : 'border-slate-300 bg-white'
++                            }`}
++                            aria-label={
++                                item.completed
++                                    ? 'Desmarcar item'
++                                    : 'Marcar item'
++                            }
++                        >
++                            {item.completed && <Check className="size-3" />}
++                        </button>
++
++                        <span
++                            className={`flex-1 text-sm ${
++                                item.completed
++                                    ? 'text-slate-400 line-through'
++                                    : 'text-slate-700'
++                            }`}
++                        >
++                            {item.title}
++                        </span>
++
++                        <button
++                            type="button"
++                            onClick={() => {
++                                markSaving()
++                                execDelete({ id: item.id })
++                            }}
++                            className="opacity-0 transition group-hover:opacity-100"
++                            aria-label="Remover item"
++                        >
++                            <Trash2 className="size-3.5 text-slate-400 hover:text-red-500" />
++                        </button>
++                    </div>
++                ))}
++            </div>
++
++            <div className="mt-2 flex items-center gap-2">
++                <input
++                    type="text"
++                    value={newItemTitle}
++                    onChange={(e) => setNewItemTitle(e.target.value)}
++                    onKeyDown={(e) => {
++                        if (e.key === 'Enter') {
++                            e.preventDefault()
++                            handleAdd()
++                        }
++                    }}
++                    placeholder="Novo item..."
++                    disabled={isCreating}
++                    className="h-9 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
++                />
++                <button
++                    type="button"
++                    onClick={handleAdd}
++                    disabled={isCreating || !newItemTitle.trim()}
++                    className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:bg-slate-50 disabled:opacity-50"
++                    aria-label="Adicionar item"
++                >
++                    <Plus className="size-4" />
++                </button>
++            </div>
++        </FieldRow>
++    )
++}
+diff --git a/components/board/card-item.tsx b/components/board/card-item.tsx
+index 17e3184..3e767d0 100644
+--- a/components/board/card-item.tsx
++++ b/components/board/card-item.tsx
+@@ -1,39 +1,38 @@
+ 'use client'
+ 
+-import { useRef } from 'react'
++import { useRef, useState } from 'react'
+ import { useForm } from 'react-hook-form'
+ import { zodResolver } from '@hookform/resolvers/zod'
+ import { z } from 'zod'
+-import { Trash2 } from 'lucide-react'
++import { CalendarDays, ListChecks } from 'lucide-react'
+ import { toast } from 'sonner'
+ import { useAction } from 'next-safe-action/hooks'
+ import { useSortable } from '@dnd-kit/sortable'
+ import { CSS } from '@dnd-kit/utilities'
+-import {
+-    AlertDialog,
+-    AlertDialogAction,
+-    AlertDialogCancel,
+-    AlertDialogContent,
+-    AlertDialogDescription,
+-    AlertDialogFooter,
+-    AlertDialogHeader,
+-    AlertDialogTitle,
+-    AlertDialogTrigger,
+-} from '@/components/ui/alert-dialog'
+-import { Button } from '@/components/ui/button'
+-import { Card } from '@/db/schema/card'
++
+ import { cardNameSchema } from '@/lib/validators/card'
+-import { updateCard, deleteCard } from '@/app/(app)/board/actions'
++import { updateCard } from '@/app/(app)/board/actions'
++import { BoardCard, CardTagOption } from './use-board-dnd'
++import { CardMenu } from './card-menu'
+ 
+ const nameSchema = z.object({ name: cardNameSchema })
+ type NameForm = z.infer<typeof nameSchema>
+ 
+ interface CardItemProps {
+-    card: Card
++    card: BoardCard
++    allColumns: Array<{ id: string; title: string; type: string }>
++    availableTags: CardTagOption[]
++    onOpenCard: (cardId: string) => void
+ }
+ 
+-export function CardItem({ card }: CardItemProps) {
++export function CardItem({
++    card,
++    allColumns,
++    availableTags,
++    onOpenCard,
++}: CardItemProps) {
+     const inputRef = useRef<HTMLInputElement | null>(null)
++    const [editing, setEditing] = useState(false)
+ 
+     const {
+         attributes,
+@@ -65,12 +64,8 @@ export function CardItem({ card }: CardItemProps) {
+         },
+     })
+ 
+-    const { execute: execDelete } = useAction(deleteCard, {
+-        onSuccess: () => toast.success('Card removido.'),
+-        onError: () => toast.error('Erro ao deletar card.'),
+-    })
+-
+     const onBlur = handleSubmit((data) => {
++        setEditing(false)
+         if (data.name !== card.name) {
+             execUpdate({ id: card.id, name: data.name })
+         }
+@@ -85,61 +80,91 @@ export function CardItem({ card }: CardItemProps) {
+ 
+     const { ref: registerRef, ...registerRest } = register('name')
+ 
++    const completedChecklist = card.checklistItems.filter(
++        (i) => i.completed
++    ).length
++
+     return (
+         <div
+             ref={setNodeRef}
+             style={style}
+             {...listeners}
+             {...attributes}
+-            className="group bg-[color:var(--card)] rounded-md border border-[color:var(--border)] px-3 py-2.5 shadow-sm cursor-grab active:cursor-grabbing flex items-center gap-2 touch-none"
++            onClick={(e) => {
++                if (editing) return
++                e.stopPropagation()
++                onOpenCard(card.id)
++            }}
++            className="group bg-[color:var(--card)] rounded-md border border-[color:var(--border)] px-3 py-2.5 shadow-sm cursor-grab active:cursor-grabbing touch-none"
+         >
+-            <input
+-                {...registerRest}
+-                ref={(el) => {
+-                    registerRef(el)
+-                    inputRef.current = el
+-                }}
+-                onBlur={onBlur}
+-                onKeyDown={handleKeyDown}
+-                onPointerDown={(e) => e.stopPropagation()}
+-                className="flex-1 min-w-0 text-sm text-[color:var(--foreground)] bg-transparent border-none outline-none focus:ring-0 focus:outline-none cursor-text"
+-                aria-label="Nome do card"
+-            />
+-
+-            <AlertDialog>
+-                <AlertDialogTrigger asChild>
+-                    <Button
+-                        variant="ghost"
+-                        size="icon"
+-                        className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 text-[color:var(--muted-foreground)] hover:text-[color:var(--destructive)] transition-opacity"
+-                        aria-label="Deletar card"
+-                        onPointerDown={(e) => e.stopPropagation()}
+-                    >
+-                        <Trash2 size={11} />
+-                    </Button>
+-                </AlertDialogTrigger>
+-                <AlertDialogContent>
+-                    <AlertDialogHeader>
+-                        <AlertDialogTitle>Deletar card?</AlertDialogTitle>
+-                        <AlertDialogDescription>
+-                            O card{' '}
+-                            <span className="font-semibold">
+-                                &ldquo;{card.name}&rdquo;
+-                            </span>{' '}
+-                            será removido permanentemente.
+-                        </AlertDialogDescription>
+-                    </AlertDialogHeader>
+-                    <AlertDialogFooter>
+-                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+-                        <AlertDialogAction
+-                            onClick={() => execDelete({ id: card.id })}
+-                            className="bg-[color:var(--destructive)] text-[color:var(--destructive-foreground)] hover:opacity-90"
++            <div className="flex items-center gap-2">
++                <input
++                    {...registerRest}
++                    ref={(el) => {
++                        registerRef(el)
++                        inputRef.current = el
++                    }}
++                    readOnly={!editing}
++                    onFocus={() => setEditing(true)}
++                    onBlur={onBlur}
++                    onKeyDown={handleKeyDown}
++                    onPointerDown={(e) => e.stopPropagation()}
++                    onClick={(e) => e.stopPropagation()}
++                    className="flex-1 min-w-0 text-sm text-[color:var(--foreground)] bg-transparent border-none outline-none focus:ring-0 focus:outline-none cursor-text"
++                    aria-label="Nome do card"
++                />
++
++                <CardMenu
++                    card={card}
++                    columns={allColumns}
++                    availableTags={availableTags}
++                    onOpenDetails={() => onOpenCard(card.id)}
++                    onEdit={() => {
++                        setEditing(true)
++                        requestAnimationFrame(() => inputRef.current?.focus())
++                    }}
++                />
++            </div>
++
++            {(card.tags.length > 0 ||
++                card.checklistItems.length > 0 ||
++                card.dueDate) && (
++                <div className="mt-2 flex flex-wrap items-center gap-2">
++                    {card.tags.map((t) => (
++                        <span
++                            key={t.id}
++                            className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
++                            style={{
++                                backgroundColor: `${t.color}20`,
++                                color: t.color,
++                            }}
+                         >
+-                            Deletar
+-                        </AlertDialogAction>
+-                    </AlertDialogFooter>
+-                </AlertDialogContent>
+-            </AlertDialog>
++                            <span
++                                className="size-1.5 rounded-full"
++                                style={{ backgroundColor: t.color }}
++                            />
++                            {t.name}
++                        </span>
++                    ))}
++
++                    {card.checklistItems.length > 0 && (
++                        <span className="flex items-center gap-1 text-[10px] text-slate-400">
++                            <ListChecks className="size-3" />
++                            {completedChecklist}/{card.checklistItems.length}
++                        </span>
++                    )}
++
++                    {card.dueDate && (
++                        <span className="flex items-center gap-1 text-[10px] text-slate-400">
++                            <CalendarDays className="size-3" />
++                            {new Date(card.dueDate).toLocaleDateString(
++                                'pt-BR',
++                                { day: '2-digit', month: '2-digit' }
++                            )}
++                        </span>
++                    )}
++                </div>
++            )}
+         </div>
+     )
+ }
+diff --git a/components/board/card-menu.tsx b/components/board/card-menu.tsx
+new file mode 100644
+index 0000000..80bee88
+--- /dev/null
++++ b/components/board/card-menu.tsx
+@@ -0,0 +1,296 @@
++'use client'
++
++import { useState } from 'react'
++import { useAction } from 'next-safe-action/hooks'
++import { toast } from 'sonner'
++import {
++    ArrowRightLeft,
++    CheckCircle2,
++    MoreVertical,
++    Pencil,
++    Tag as TagIcon,
++    Trash2,
++} from 'lucide-react'
++
++import {
++    Popover,
++    PopoverContent,
++    PopoverTrigger,
++} from '@/components/ui/popover'
++import {
++    AlertDialog,
++    AlertDialogAction,
++    AlertDialogCancel,
++    AlertDialogContent,
++    AlertDialogDescription,
++    AlertDialogFooter,
++    AlertDialogHeader,
++    AlertDialogTitle,
++} from '@/components/ui/alert-dialog'
++import { Button } from '@/components/ui/button'
++
++import { deleteCard, moveCard, toggleCardTag } from '@/app/(app)/board/actions'
++import { BoardCard, CardTagOption } from './use-board-dnd'
++
++const APPEND_TO_END = 1_000_000
++
++interface CardMenuProps {
++    card: BoardCard
++    columns: Array<{ id: string; title: string; type: string }>
++    availableTags: CardTagOption[]
++    onOpenDetails: () => void
++    onEdit: () => void
++}
++
++export function CardMenu({
++    card,
++    columns,
++    availableTags,
++    onOpenDetails,
++    onEdit,
++}: CardMenuProps) {
++    const [open, setOpen] = useState(false)
++    const [submenu, setSubmenu] = useState<'root' | 'move' | 'tags'>('root')
++    const [deleteOpen, setDeleteOpen] = useState(false)
++
++    const { execute: execMove } = useAction(moveCard, {
++        onError: () => toast.error('Erro ao mover card.'),
++    })
++
++    const { execute: execToggleTag } = useAction(toggleCardTag, {
++        onError: () => toast.error('Erro ao atualizar tag.'),
++    })
++
++    const { execute: execDelete } = useAction(deleteCard, {
++        onSuccess: () => toast.success('Card removido.'),
++        onError: () => toast.error('Erro ao deletar card.'),
++    })
++
++    const doneColumn = columns.find((c) => c.type === 'DONE')
++    const attachedIds = new Set(card.tags.map((t) => t.id))
++
++    function close() {
++        setOpen(false)
++        setSubmenu('root')
++    }
++
++    return (
++        <>
++            <Popover
++                open={open}
++                onOpenChange={(next) => {
++                    setOpen(next)
++                    if (!next) setSubmenu('root')
++                }}
++            >
++                <PopoverTrigger asChild>
++                    <Button
++                        variant="ghost"
++                        size="icon"
++                        className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 text-[color:var(--muted-foreground)] transition-opacity"
++                        aria-label="Ações do card"
++                        onPointerDown={(e) => e.stopPropagation()}
++                        onClick={(e) => e.stopPropagation()}
++                    >
++                        <MoreVertical size={13} />
++                    </Button>
++                </PopoverTrigger>
++
++                <PopoverContent
++                    align="end"
++                    className="w-56 p-1"
++                    onPointerDown={(e) => e.stopPropagation()}
++                >
++                    {submenu === 'root' && (
++                        <div className="flex flex-col">
++                            <MenuButton
++                                icon={<Pencil size={14} />}
++                                label="Abrir detalhes"
++                                onClick={() => {
++                                    onOpenDetails()
++                                    close()
++                                }}
++                            />
++                            <MenuButton
++                                icon={<Pencil size={14} />}
++                                label="Editar título"
++                                onClick={() => {
++                                    onEdit()
++                                    close()
++                                }}
++                            />
++                            <MenuButton
++                                icon={<ArrowRightLeft size={14} />}
++                                label="Mover para..."
++                                onClick={() => setSubmenu('move')}
++                            />
++                            <MenuButton
++                                icon={<TagIcon size={14} />}
++                                label="Tags"
++                                onClick={() => setSubmenu('tags')}
++                            />
++                            {doneColumn && doneColumn.id !== card.columnId && (
++                                <MenuButton
++                                    icon={<CheckCircle2 size={14} />}
++                                    label="Concluir"
++                                    onClick={() => {
++                                        execMove({
++                                            cardId: card.id,
++                                            targetColumnId: doneColumn.id,
++                                            targetPosition: APPEND_TO_END,
++                                        })
++                                        close()
++                                    }}
++                                />
++                            )}
++                            <div className="my-1 h-px bg-slate-100" />
++                            <MenuButton
++                                icon={<Trash2 size={14} />}
++                                label="Excluir"
++                                danger
++                                onClick={() => {
++                                    setDeleteOpen(true)
++                                    setOpen(false)
++                                }}
++                            />
++                        </div>
++                    )}
++
++                    {submenu === 'move' && (
++                        <div className="flex flex-col">
++                            <button
++                                type="button"
++                                onClick={() => setSubmenu('root')}
++                                className="mb-1 px-2 py-1 text-left text-xs text-slate-400 hover:text-slate-600"
++                            >
++                                ← Voltar
++                            </button>
++                            {columns.map((column) => (
++                                <MenuButton
++                                    key={column.id}
++                                    label={column.title}
++                                    active={column.id === card.columnId}
++                                    onClick={() => {
++                                        if (column.id !== card.columnId) {
++                                            execMove({
++                                                cardId: card.id,
++                                                targetColumnId: column.id,
++                                                targetPosition:
++                                                    APPEND_TO_END,
++                                            })
++                                        }
++                                        close()
++                                    }}
++                                />
++                            ))}
++                        </div>
++                    )}
++
++                    {submenu === 'tags' && (
++                        <div className="flex flex-col">
++                            <button
++                                type="button"
++                                onClick={() => setSubmenu('root')}
++                                className="mb-1 px-2 py-1 text-left text-xs text-slate-400 hover:text-slate-600"
++                            >
++                                ← Voltar
++                            </button>
++                            {availableTags.length === 0 && (
++                                <p className="px-2 py-1.5 text-xs text-slate-400">
++                                    Nenhuma tag criada ainda.
++                                </p>
++                            )}
++                            {availableTags.map((t) => {
++                                const attached = attachedIds.has(t.id)
++                                return (
++                                    <button
++                                        key={t.id}
++                                        type="button"
++                                        onClick={() =>
++                                            execToggleTag({
++                                                cardId: card.id,
++                                                tagId: t.id,
++                                                attach: !attached,
++                                            })
++                                        }
++                                        className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm text-slate-700 hover:bg-slate-50"
++                                    >
++                                        <span
++                                            className="size-2.5 rounded-full"
++                                            style={{
++                                                backgroundColor: t.color,
++                                            }}
++                                        />
++                                        <span className="flex-1">
++                                            {t.name}
++                                        </span>
++                                        {attached && (
++                                            <span className="text-xs text-blue-600">
++                                                ✓
++                                            </span>
++                                        )}
++                                    </button>
++                                )
++                            })}
++                        </div>
++                    )}
++                </PopoverContent>
++            </Popover>
++
++            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
++                <AlertDialogContent>
++                    <AlertDialogHeader>
++                        <AlertDialogTitle>Deletar card?</AlertDialogTitle>
++                        <AlertDialogDescription>
++                            O card{' '}
++                            <span className="font-semibold">
++                                &ldquo;{card.name}&rdquo;
++                            </span>{' '}
++                            será removido permanentemente.
++                        </AlertDialogDescription>
++                    </AlertDialogHeader>
++                    <AlertDialogFooter>
++                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
++                        <AlertDialogAction
++                            onClick={() => execDelete({ id: card.id })}
++                            className="bg-[color:var(--destructive)] text-[color:var(--destructive-foreground)] hover:opacity-90"
++                        >
++                            Deletar
++                        </AlertDialogAction>
++                    </AlertDialogFooter>
++                </AlertDialogContent>
++            </AlertDialog>
++        </>
++    )
++}
++
++function MenuButton({
++    icon,
++    label,
++    onClick,
++    danger,
++    active,
++}: {
++    icon?: React.ReactNode
++    label: string
++    onClick: () => void
++    danger?: boolean
++    active?: boolean
++}) {
++    return (
++        <button
++            type="button"
++            onClick={onClick}
++            className={`flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition ${
++                danger
++                    ? 'text-red-600 hover:bg-red-50'
++                    : active
++                        ? 'bg-slate-50 font-medium text-slate-900'
++                        : 'text-slate-700 hover:bg-slate-50'
++            }`}
++        >
++            {icon}
++            {label}
++        </button>
++    )
++}
+diff --git a/components/board/column-card.tsx b/components/board/column-card.tsx
+index aac8d28..2faaa7e 100644
+--- a/components/board/column-card.tsx
++++ b/components/board/column-card.tsx
+@@ -8,22 +8,28 @@ import {
+ import { CSS } from '@dnd-kit/utilities'
+ 
+ import { BoardColumn } from '@/db/schema/column'
+-import { Card } from '@/db/schema/card'
+ 
+ import { columnColorToCss } from '@/lib/validators/column'
+ 
+ import { ColumnHeader } from './column-header'
+ import { CardItem } from './card-item'
+ import { CreateCardButton } from './create-card-button'
++import { BoardCard, CardTagOption } from './use-board-dnd'
+ 
+ interface ColumnCardProps {
+     column: BoardColumn
+-    cards: Card[]
++    cards: BoardCard[]
++    allColumns: Array<{ id: string; title: string; type: string }>
++    availableTags: CardTagOption[]
++    onOpenCard: (cardId: string) => void
+ }
+ 
+ export function ColumnCard({
+     column,
+     cards,
++    allColumns,
++    availableTags,
++    onOpenCard,
+ }: ColumnCardProps) {
+     const {
+         attributes,
+@@ -69,6 +75,8 @@ export function ColumnCard({
+                     column={column}
+                     listeners={listeners}
+                     attributes={attributes}
++                    allColumns={allColumns}
++                    cardsInColumn={cards.length}
+                 />
+             </div>
+ 
+@@ -86,6 +94,9 @@ export function ColumnCard({
+                         <CardItem
+                             key={card.id}
+                             card={card}
++                            allColumns={allColumns}
++                            availableTags={availableTags}
++                            onOpenCard={onOpenCard}
+                         />
+                     ))}
+ 
+diff --git a/components/board/column-header.tsx b/components/board/column-header.tsx
+index e03877a..42b59b1 100644
+--- a/components/board/column-header.tsx
++++ b/components/board/column-header.tsx
+@@ -5,6 +5,8 @@ import { useForm } from 'react-hook-form'
+ import { zodResolver } from '@hookform/resolvers/zod'
+ import { z } from 'zod'
+ import {
++  ArrowLeft,
++  ArrowRight,
+   GripVertical,
+   MoreHorizontal,
+   Palette,
+@@ -35,6 +37,7 @@ import { Button } from '@/components/ui/button'
+ import {
+   updateColumn,
+   deleteColumn,
++  reorderColumns,
+ } from '@/app/(app)/board/actions'
+ 
+ import { BoardColumn } from '@/db/schema/column'
+@@ -59,6 +62,8 @@ interface ColumnHeaderProps {
+   column: BoardColumn
+   listeners: SyntheticListenerMap | undefined
+   attributes: DraggableAttributes
++  allColumns: Array<{ id: string; title: string; type: string }>
++  cardsInColumn: number
+ }
+ 
+ const columnTypes = [
+@@ -84,6 +89,8 @@ export function ColumnHeader({
+   column,
+   listeners,
+   attributes,
++  allColumns,
++  cardsInColumn,
+ }: ColumnHeaderProps) {
+   const [menuOpen, setMenuOpen] =
+     useState(false)
+@@ -91,6 +98,9 @@ export function ColumnHeader({
+   const [deleteOpen, setDeleteOpen] =
+     useState(false)
+ 
++  const [targetColumnId, setTargetColumnId] =
++    useState('')
++
+   const inputRef =
+     useRef<HTMLInputElement | null>(null)
+ 
+@@ -122,16 +132,61 @@ export function ColumnHeader({
+ 
+   const { execute: execDelete } =
+     useAction(deleteColumn, {
+-      onError: () =>
++      onError: (args) =>
+         toast.error(
+-          'Erro ao deletar coluna.'
++          args.error.serverError ?? 'Erro ao deletar coluna.'
+         ),
+ 
+-      onSuccess: () =>
++      onSuccess: () => {
+         toast.success(
+           'Coluna removida.'
+-        ),
++        )
++        setDeleteOpen(false)
++        setTargetColumnId('')
++      },
++    })
++
++  const { execute: execReorder } =
++    useAction(reorderColumns, {
++      onError: () =>
++        toast.error('Erro ao reordenar colunas.'),
++    })
++
++  const otherColumns = allColumns.filter(
++    (c) => c.id !== column.id
++  )
++
++  function moveColumn(direction: 'left' | 'right') {
++    const ids = allColumns.map((c) => c.id)
++    const index = ids.indexOf(column.id)
++    const swapIndex = direction === 'left' ? index - 1 : index + 1
++
++    if (swapIndex < 0 || swapIndex >= ids.length) return
++
++    const reordered = [...ids]
++    ;[reordered[index], reordered[swapIndex]] = [
++      reordered[swapIndex],
++      reordered[index],
++    ]
++
++    execReorder({ orderedIds: reordered })
++    setMenuOpen(false)
++  }
++
++  function handleDeleteClick() {
++    setMenuOpen(false)
++    setTargetColumnId('')
++    setDeleteOpen(true)
++  }
++
++  function confirmDelete() {
++    if (cardsInColumn > 0 && !targetColumnId) return
++
++    execDelete({
++      id: column.id,
++      targetColumnId: cardsInColumn > 0 ? targetColumnId : undefined,
+     })
++  }
+ 
+   const onBlur = handleSubmit(
+     (data) => {
+@@ -352,18 +407,39 @@ export function ColumnHeader({
+ 
+             <div className="my-3 h-px bg-slate-200" />
+ 
++            {/* MOVER (alternativa ao drag, útil no mobile) */}
++            <div>
++              <p className="mb-2 text-xs font-semibold text-slate-400">
++                Mover coluna
++              </p>
++
++              <div className="flex gap-2">
++                <button
++                  type="button"
++                  onClick={() => moveColumn('left')}
++                  className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-slate-200 py-2 text-sm text-slate-600 transition hover:bg-slate-100"
++                >
++                  <ArrowLeft className="size-3.5" />
++                  Esquerda
++                </button>
++
++                <button
++                  type="button"
++                  onClick={() => moveColumn('right')}
++                  className="flex flex-1 items-center justify-center gap-1.5 rounded-md border border-slate-200 py-2 text-sm text-slate-600 transition hover:bg-slate-100"
++                >
++                  Direita
++                  <ArrowRight className="size-3.5" />
++                </button>
++              </div>
++            </div>
++
++            <div className="my-3 h-px bg-slate-200" />
++
+             {/* EXCLUIR */}
+             <button
+               type="button"
+-              onClick={() => {
+-                setMenuOpen(
+-                  false
+-                )
+-
+-                setDeleteOpen(
+-                  true
+-                )
+-              }}
++              onClick={handleDeleteClick}
+               className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-red-600 transition hover:bg-red-50"
+             >
+               <Trash2 className="size-4" />
+@@ -377,9 +453,10 @@ export function ColumnHeader({
+       {/* DELETE */}
+       <AlertDialog
+         open={deleteOpen}
+-        onOpenChange={
+-          setDeleteOpen
+-        }
++        onOpenChange={(open) => {
++          setDeleteOpen(open)
++          if (!open) setTargetColumnId('')
++        }}
+       >
+         <AlertDialogContent>
+           <AlertDialogHeader>
+@@ -387,17 +464,78 @@ export function ColumnHeader({
+               Deletar coluna?
+             </AlertDialogTitle>
+ 
+-            <AlertDialogDescription>
+-              A coluna{' '}
+-              <span className="font-semibold">
+-                &ldquo;
+-                {getValues(
+-                  'title'
++            <AlertDialogDescription asChild>
++              <div>
++                {cardsInColumn > 0 ? (
++                  <>
++                    <p>
++                      Esta coluna possui{' '}
++                      <span className="font-semibold">
++                        {cardsInColumn}{' '}
++                        {cardsInColumn === 1
++                          ? 'tarefa'
++                          : 'tarefas'}
++                      </span>
++                      . Selecione para onde
++                      movê-las antes de
++                      excluir a coluna{' '}
++                      <span className="font-semibold">
++                        &ldquo;
++                        {getValues('title')}
++                        &rdquo;
++                      </span>
++                      .
++                    </p>
++
++                    {otherColumns.length === 0 ? (
++                      <p className="mt-3 text-red-600">
++                        Não há outra coluna
++                        para receber essas
++                        tarefas. Crie outra
++                        coluna antes de
++                        excluir esta.
++                      </p>
++                    ) : (
++                      <select
++                        value={targetColumnId}
++                        onChange={(e) =>
++                          setTargetColumnId(
++                            e.target.value
++                          )
++                        }
++                        className="mt-3 h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
++                      >
++                        <option value="">
++                          Selecione a coluna
++                          de destino
++                        </option>
++                        {otherColumns.map(
++                          (c) => (
++                            <option
++                              key={c.id}
++                              value={c.id}
++                            >
++                              {c.title}
++                            </option>
++                          )
++                        )}
++                      </select>
++                    )}
++                  </>
++                ) : (
++                  <p>
++                    A coluna{' '}
++                    <span className="font-semibold">
++                      &ldquo;
++                      {getValues('title')}
++                      &rdquo;
++                    </span>{' '}
++                    está vazia e será
++                    removida
++                    permanentemente.
++                  </p>
+                 )}
+-                &rdquo;
+-              </span>{' '}
+-              e todos os seus
+-              cards serão removidos.
++              </div>
+             </AlertDialogDescription>
+           </AlertDialogHeader>
+ 
+@@ -407,12 +545,13 @@ export function ColumnHeader({
+             </AlertDialogCancel>
+ 
+             <AlertDialogAction
+-              onClick={() =>
+-                execDelete({
+-                  id: column.id,
+-                })
++              onClick={confirmDelete}
++              disabled={
++                cardsInColumn > 0 &&
++                (!targetColumnId ||
++                  otherColumns.length === 0)
+               }
+-              className="bg-red-600 text-white hover:bg-red-700"
++              className="bg-red-600 text-white hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+             >
+               Deletar
+             </AlertDialogAction>
+diff --git a/components/board/use-board-dnd.ts b/components/board/use-board-dnd.ts
+index 424ec9d..60c96bc 100644
+--- a/components/board/use-board-dnd.ts
++++ b/components/board/use-board-dnd.ts
+@@ -8,7 +8,25 @@ import { BoardColumn } from '@/db/schema/column'
+ import { Card } from '@/db/schema/card'
+ import { reorderColumns, moveCard } from '@/app/(app)/board/actions'
+ 
+-export type ColumnWithCards = BoardColumn & { cards: Card[] }
++export interface CardTagOption {
++    id: string
++    name: string
++    color: string
++}
++
++export interface CardChecklistItemOption {
++    id: string
++    title: string
++    completed: boolean
++    position: number
++}
++
++export type BoardCard = Card & {
++    tags: CardTagOption[]
++    checklistItems: CardChecklistItemOption[]
++}
++
++export type ColumnWithCards = BoardColumn & { cards: BoardCard[] }
+ 
+ export function useBoardDnd(initialColumns: ColumnWithCards[]) {
+     const [columns, setColumns] = useState(initialColumns)
+diff --git a/components/ui/sheet.tsx b/components/ui/sheet.tsx
+new file mode 100644
+index 0000000..9c32ca5
+--- /dev/null
++++ b/components/ui/sheet.tsx
+@@ -0,0 +1,128 @@
++"use client"
++
++import * as React from "react"
++import * as SheetPrimitive from "@radix-ui/react-dialog"
++import { cva, type VariantProps } from "class-variance-authority"
++import { X } from "lucide-react"
++
++import { cn } from "@/lib/utils"
++
++const Sheet = SheetPrimitive.Root
++
++const SheetTrigger = SheetPrimitive.Trigger
++
++const SheetClose = SheetPrimitive.Close
++
++const SheetPortal = SheetPrimitive.Portal
++
++const SheetOverlay = React.forwardRef<
++  React.ElementRef<typeof SheetPrimitive.Overlay>,
++  React.ComponentPropsWithoutRef<typeof SheetPrimitive.Overlay>
++>(({ className, ...props }, ref) => (
++  <SheetPrimitive.Overlay
++    ref={ref}
++    className={cn(
++      "fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
++      className
++    )}
++    {...props}
++  />
++))
++SheetOverlay.displayName = SheetPrimitive.Overlay.displayName
++
++/**
++ * Painel lateral no desktop (entra pela direita, largura fixa),
++ * praticamente tela cheia no mobile (sm: define a transição).
++ */
++const sheetVariants = cva(
++  "fixed z-50 gap-4 bg-white p-0 shadow-xl transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=open]:duration-300",
++  {
++    variants: {
++      side: {
++        right:
++          "inset-y-0 right-0 h-full w-full border-l border-slate-200 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-md",
++      },
++    },
++    defaultVariants: {
++      side: "right",
++    },
++  }
++)
++
++interface SheetContentProps
++  extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
++    VariantProps<typeof sheetVariants> {}
++
++const SheetContent = React.forwardRef<
++  React.ElementRef<typeof SheetPrimitive.Content>,
++  SheetContentProps
++>(({ side = "right", className, children, ...props }, ref) => (
++  <SheetPortal>
++    <SheetOverlay />
++    <SheetPrimitive.Content
++      ref={ref}
++      className={cn(sheetVariants({ side }), className)}
++      {...props}
++    >
++      {children}
++      <SheetPrimitive.Close className="absolute right-4 top-4 rounded-md p-1.5 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200">
++        <X className="size-4" />
++        <span className="sr-only">Fechar</span>
++      </SheetPrimitive.Close>
++    </SheetPrimitive.Content>
++  </SheetPortal>
++))
++SheetContent.displayName = SheetPrimitive.Content.displayName
++
++const SheetHeader = ({
++  className,
++  ...props
++}: React.HTMLAttributes<HTMLDivElement>) => (
++  <div
++    className={cn(
++      "flex flex-col gap-1.5 border-b border-slate-100 px-5 py-4",
++      className
++    )}
++    {...props}
++  />
++)
++SheetHeader.displayName = "SheetHeader"
++
++const SheetTitle = React.forwardRef<
++  React.ElementRef<typeof SheetPrimitive.Title>,
++  React.ComponentPropsWithoutRef<typeof SheetPrimitive.Title>
++>(({ className, ...props }, ref) => (
++  <SheetPrimitive.Title
++    ref={ref}
++    className={cn(
++      "pr-8 text-base font-semibold text-slate-900",
++      className
++    )}
++    {...props}
++  />
++))
++SheetTitle.displayName = SheetPrimitive.Title.displayName
++
++const SheetDescription = React.forwardRef<
++  React.ElementRef<typeof SheetPrimitive.Description>,
++  React.ComponentPropsWithoutRef<typeof SheetPrimitive.Description>
++>(({ className, ...props }, ref) => (
++  <SheetPrimitive.Description
++    ref={ref}
++    className={cn("text-sm text-slate-500", className)}
++    {...props}
++  />
++))
++SheetDescription.displayName = SheetPrimitive.Description.displayName
++
++export {
++  Sheet,
++  SheetPortal,
++  SheetOverlay,
++  SheetTrigger,
++  SheetClose,
++  SheetContent,
++  SheetHeader,
++  SheetTitle,
++  SheetDescription,
++}
+diff --git a/db/migrations/0012_add_card_tags_description_duedate_checklist.sql b/db/migrations/0012_add_card_tags_description_duedate_checklist.sql
+new file mode 100644
+index 0000000..0aab5e6
+--- /dev/null
++++ b/db/migrations/0012_add_card_tags_description_duedate_checklist.sql
+@@ -0,0 +1,21 @@
++CREATE TABLE "card_tag" (
++	"card_id" text NOT NULL,
++	"tag_id" text NOT NULL,
++	CONSTRAINT "card_tag_card_id_tag_id_pk" PRIMARY KEY("card_id","tag_id")
++);
++--> statement-breakpoint
++CREATE TABLE "card_checklist_item" (
++	"id" text PRIMARY KEY NOT NULL,
++	"card_id" text NOT NULL,
++	"title" text NOT NULL,
++	"completed" boolean DEFAULT false NOT NULL,
++	"position" integer NOT NULL,
++	"created_at" timestamp DEFAULT now() NOT NULL
++);
++--> statement-breakpoint
++ALTER TABLE "card" ADD COLUMN "description" text;--> statement-breakpoint
++ALTER TABLE "card" ADD COLUMN "due_date" date;--> statement-breakpoint
++ALTER TABLE "card_tag" ADD CONSTRAINT "card_tag_card_id_card_id_fk" FOREIGN KEY ("card_id") REFERENCES "public"."card"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
++ALTER TABLE "card_tag" ADD CONSTRAINT "card_tag_tag_id_tag_id_fk" FOREIGN KEY ("tag_id") REFERENCES "public"."tag"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
++ALTER TABLE "card_checklist_item" ADD CONSTRAINT "card_checklist_item_card_id_card_id_fk" FOREIGN KEY ("card_id") REFERENCES "public"."card"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
++CREATE INDEX "card_checklist_item_card_id_idx" ON "card_checklist_item" USING btree ("card_id");
+\ No newline at end of file
+diff --git a/db/migrations/meta/0012_snapshot.json b/db/migrations/meta/0012_snapshot.json
+new file mode 100644
+index 0000000..b68e557
+--- /dev/null
++++ b/db/migrations/meta/0012_snapshot.json
+@@ -0,0 +1,1517 @@
++{
++  "id": "9c583cc7-9a68-4e07-acc0-e2bdcfbcc79b",
++  "prevId": "d7a404cd-0c81-402e-afbd-464433fb9d31",
++  "version": "7",
++  "dialect": "postgresql",
++  "tables": {
++    "public.account": {
++      "name": "account",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "account_id": {
++          "name": "account_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "provider_id": {
++          "name": "provider_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "access_token": {
++          "name": "access_token",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "refresh_token": {
++          "name": "refresh_token",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "id_token": {
++          "name": "id_token",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "access_token_expires_at": {
++          "name": "access_token_expires_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "refresh_token_expires_at": {
++          "name": "refresh_token_expires_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "scope": {
++          "name": "scope",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "password": {
++          "name": "password",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true
++        }
++      },
++      "indexes": {
++        "account_userId_idx": {
++          "name": "account_userId_idx",
++          "columns": [
++            {
++              "expression": "user_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "account_user_id_user_id_fk": {
++          "name": "account_user_id_user_id_fk",
++          "tableFrom": "account",
++          "tableTo": "user",
++          "columnsFrom": [
++            "user_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.session": {
++      "name": "session",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "expires_at": {
++          "name": "expires_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "token": {
++          "name": "token",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "ip_address": {
++          "name": "ip_address",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "user_agent": {
++          "name": "user_agent",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        }
++      },
++      "indexes": {
++        "session_userId_idx": {
++          "name": "session_userId_idx",
++          "columns": [
++            {
++              "expression": "user_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "session_user_id_user_id_fk": {
++          "name": "session_user_id_user_id_fk",
++          "tableFrom": "session",
++          "tableTo": "user",
++          "columnsFrom": [
++            "user_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "session_token_unique": {
++          "name": "session_token_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "token"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.user": {
++      "name": "user",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "email": {
++          "name": "email",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "email_verified": {
++          "name": "email_verified",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "image": {
++          "name": "image",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "user_email_unique": {
++          "name": "user_email_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "email"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.verification": {
++      "name": "verification",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "identifier": {
++          "name": "identifier",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "value": {
++          "name": "value",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "expires_at": {
++          "name": "expires_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "verification_identifier_idx": {
++          "name": "verification_identifier_idx",
++          "columns": [
++            {
++              "expression": "identifier",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.board": {
++      "name": "board",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "title": {
++          "name": "title",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'Meu Board'"
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "board_user_id_unique": {
++          "name": "board_user_id_unique",
++          "columns": [
++            {
++              "expression": "user_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": true,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "board_user_id_user_id_fk": {
++          "name": "board_user_id_user_id_fk",
++          "tableFrom": "board",
++          "tableTo": "user",
++          "columnsFrom": [
++            "user_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.column": {
++      "name": "column",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "board_id": {
++          "name": "board_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "title": {
++          "name": "title",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "position": {
++          "name": "position",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "type": {
++          "name": "type",
++          "type": "column_type",
++          "typeSchema": "public",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'DEFAULT'"
++        },
++        "color": {
++          "name": "color",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'slate'"
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "column_board_id_idx": {
++          "name": "column_board_id_idx",
++          "columns": [
++            {
++              "expression": "board_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "column_board_id_board_id_fk": {
++          "name": "column_board_id_board_id_fk",
++          "tableFrom": "column",
++          "tableTo": "board",
++          "columnsFrom": [
++            "board_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.card": {
++      "name": "card",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "column_id": {
++          "name": "column_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "description": {
++          "name": "description",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "due_date": {
++          "name": "due_date",
++          "type": "date",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "position": {
++          "name": "position",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "card_column_id_idx": {
++          "name": "card_column_id_idx",
++          "columns": [
++            {
++              "expression": "column_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "card_column_id_column_id_fk": {
++          "name": "card_column_id_column_id_fk",
++          "tableFrom": "card",
++          "tableTo": "column",
++          "columnsFrom": [
++            "column_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.card_tag": {
++      "name": "card_tag",
++      "schema": "",
++      "columns": {
++        "card_id": {
++          "name": "card_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "tag_id": {
++          "name": "tag_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "card_tag_card_id_card_id_fk": {
++          "name": "card_tag_card_id_card_id_fk",
++          "tableFrom": "card_tag",
++          "tableTo": "card",
++          "columnsFrom": [
++            "card_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        },
++        "card_tag_tag_id_tag_id_fk": {
++          "name": "card_tag_tag_id_tag_id_fk",
++          "tableFrom": "card_tag",
++          "tableTo": "tag",
++          "columnsFrom": [
++            "tag_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {
++        "card_tag_card_id_tag_id_pk": {
++          "name": "card_tag_card_id_tag_id_pk",
++          "columns": [
++            "card_id",
++            "tag_id"
++          ]
++        }
++      },
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.card_checklist_item": {
++      "name": "card_checklist_item",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "card_id": {
++          "name": "card_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "title": {
++          "name": "title",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "completed": {
++          "name": "completed",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "position": {
++          "name": "position",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "card_checklist_item_card_id_idx": {
++          "name": "card_checklist_item_card_id_idx",
++          "columns": [
++            {
++              "expression": "card_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "card_checklist_item_card_id_card_id_fk": {
++          "name": "card_checklist_item_card_id_card_id_fk",
++          "tableFrom": "card_checklist_item",
++          "tableTo": "card",
++          "columnsFrom": [
++            "card_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.task": {
++      "name": "task",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "title": {
++          "name": "title",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "description": {
++          "name": "description",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "area": {
++          "name": "area",
++          "type": "task_area",
++          "typeSchema": "public",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'INBOX'"
++        },
++        "inbox_stage": {
++          "name": "inbox_stage",
++          "type": "inbox_stage",
++          "typeSchema": "public",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'ARRIVED'"
++        },
++        "status": {
++          "name": "status",
++          "type": "task_status",
++          "typeSchema": "public",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'BACKLOG'"
++        },
++        "priority": {
++          "name": "priority",
++          "type": "task_priority",
++          "typeSchema": "public",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'MEDIUM'"
++        },
++        "planned_date": {
++          "name": "planned_date",
++          "type": "date",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "planned_time": {
++          "name": "planned_time",
++          "type": "time",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "due_date": {
++          "name": "due_date",
++          "type": "date",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "estimated_minutes": {
++          "name": "estimated_minutes",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "is_top_priority": {
++          "name": "is_top_priority",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "position": {
++          "name": "position",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "completed_at": {
++          "name": "completed_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "task_user_id_idx": {
++          "name": "task_user_id_idx",
++          "columns": [
++            {
++              "expression": "user_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "task_status_idx": {
++          "name": "task_status_idx",
++          "columns": [
++            {
++              "expression": "status",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "task_planned_date_idx": {
++          "name": "task_planned_date_idx",
++          "columns": [
++            {
++              "expression": "planned_date",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "task_user_id_user_id_fk": {
++          "name": "task_user_id_user_id_fk",
++          "tableFrom": "task",
++          "tableTo": "user",
++          "columnsFrom": [
++            "user_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.week_goal": {
++      "name": "week_goal",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "title": {
++          "name": "title",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "week_start": {
++          "name": "week_start",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "completed": {
++          "name": "completed",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.week_habit": {
++      "name": "week_habit",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "title": {
++          "name": "title",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "week_start": {
++          "name": "week_start",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "target_days": {
++          "name": "target_days",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 7
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.week_habit_check": {
++      "name": "week_habit_check",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "habit_id": {
++          "name": "habit_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "date": {
++          "name": "date",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "completed": {
++          "name": "completed",
++          "type": "boolean",
++          "primaryKey": false,
++          "notNull": true,
++          "default": false
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "week_habit_check_habit_id_week_habit_id_fk": {
++          "name": "week_habit_check_habit_id_week_habit_id_fk",
++          "tableFrom": "week_habit_check",
++          "tableTo": "week_habit",
++          "columnsFrom": [
++            "habit_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.focus_session": {
++      "name": "focus_session",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "task_id": {
++          "name": "task_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "started_at": {
++          "name": "started_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "paused_at": {
++          "name": "paused_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "accumulated_seconds": {
++          "name": "accumulated_seconds",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "ended_at": {
++          "name": "ended_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": false
++        },
++        "duration_seconds": {
++          "name": "duration_seconds",
++          "type": "integer",
++          "primaryKey": false,
++          "notNull": true,
++          "default": 0
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {
++        "focus_session_user_id_idx": {
++          "name": "focus_session_user_id_idx",
++          "columns": [
++            {
++              "expression": "user_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "focus_session_task_id_idx": {
++          "name": "focus_session_task_id_idx",
++          "columns": [
++            {
++              "expression": "task_id",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        },
++        "focus_session_started_at_idx": {
++          "name": "focus_session_started_at_idx",
++          "columns": [
++            {
++              "expression": "started_at",
++              "isExpression": false,
++              "asc": true,
++              "nulls": "last"
++            }
++          ],
++          "isUnique": false,
++          "concurrently": false,
++          "method": "btree",
++          "with": {}
++        }
++      },
++      "foreignKeys": {
++        "focus_session_user_id_user_id_fk": {
++          "name": "focus_session_user_id_user_id_fk",
++          "tableFrom": "focus_session",
++          "tableTo": "user",
++          "columnsFrom": [
++            "user_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        },
++        "focus_session_task_id_task_id_fk": {
++          "name": "focus_session_task_id_task_id_fk",
++          "tableFrom": "focus_session",
++          "tableTo": "task",
++          "columnsFrom": [
++            "task_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.tag": {
++      "name": "tag",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "text",
++          "primaryKey": true,
++          "notNull": true
++        },
++        "user_id": {
++          "name": "user_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "color": {
++          "name": "color",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "'blue'"
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        },
++        "updated_at": {
++          "name": "updated_at",
++          "type": "timestamp",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "tag_user_id_user_id_fk": {
++          "name": "tag_user_id_user_id_fk",
++          "tableFrom": "tag",
++          "tableTo": "user",
++          "columnsFrom": [
++            "user_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.task_tag": {
++      "name": "task_tag",
++      "schema": "",
++      "columns": {
++        "task_id": {
++          "name": "task_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "tag_id": {
++          "name": "tag_id",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {
++        "task_tag_task_id_task_id_fk": {
++          "name": "task_tag_task_id_task_id_fk",
++          "tableFrom": "task_tag",
++          "tableTo": "task",
++          "columnsFrom": [
++            "task_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        },
++        "task_tag_tag_id_tag_id_fk": {
++          "name": "task_tag_tag_id_tag_id_fk",
++          "tableFrom": "task_tag",
++          "tableTo": "tag",
++          "columnsFrom": [
++            "tag_id"
++          ],
++          "columnsTo": [
++            "id"
++          ],
++          "onDelete": "cascade",
++          "onUpdate": "no action"
++        }
++      },
++      "compositePrimaryKeys": {
++        "task_tag_task_id_tag_id_pk": {
++          "name": "task_tag_task_id_tag_id_pk",
++          "columns": [
++            "task_id",
++            "tag_id"
++          ]
++        }
++      },
++      "uniqueConstraints": {},
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    },
++    "public.waitlist": {
++      "name": "waitlist",
++      "schema": "",
++      "columns": {
++        "id": {
++          "name": "id",
++          "type": "uuid",
++          "primaryKey": true,
++          "notNull": true,
++          "default": "gen_random_uuid()"
++        },
++        "name": {
++          "name": "name",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "email": {
++          "name": "email",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "phone": {
++          "name": "phone",
++          "type": "text",
++          "primaryKey": false,
++          "notNull": true
++        },
++        "created_at": {
++          "name": "created_at",
++          "type": "timestamp with time zone",
++          "primaryKey": false,
++          "notNull": true,
++          "default": "now()"
++        }
++      },
++      "indexes": {},
++      "foreignKeys": {},
++      "compositePrimaryKeys": {},
++      "uniqueConstraints": {
++        "waitlist_email_unique": {
++          "name": "waitlist_email_unique",
++          "nullsNotDistinct": false,
++          "columns": [
++            "email"
++          ]
++        }
++      },
++      "policies": {},
++      "checkConstraints": {},
++      "isRLSEnabled": false
++    }
++  },
++  "enums": {
++    "public.column_type": {
++      "name": "column_type",
++      "schema": "public",
++      "values": [
++        "DEFAULT",
++        "PENDING",
++        "IN_PROGRESS",
++        "DONE"
++      ]
++    },
++    "public.inbox_stage": {
++      "name": "inbox_stage",
++      "schema": "public",
++      "values": [
++        "ARRIVED",
++        "ORGANIZE",
++        "NEXT",
++        "ORGANIZED"
++      ]
++    },
++    "public.task_area": {
++      "name": "task_area",
++      "schema": "public",
++      "values": [
++        "WORK",
++        "STUDIES",
++        "PERSONAL",
++        "INBOX"
++      ]
++    },
++    "public.task_priority": {
++      "name": "task_priority",
++      "schema": "public",
++      "values": [
++        "LOW",
++        "MEDIUM",
++        "HIGH"
++      ]
++    },
++    "public.task_status": {
++      "name": "task_status",
++      "schema": "public",
++      "values": [
++        "BACKLOG",
++        "WEEK",
++        "TODAY",
++        "DOING",
++        "DONE",
++        "CANCELED"
++      ]
++    }
++  },
++  "schemas": {},
++  "sequences": {},
++  "roles": {},
++  "policies": {},
++  "views": {},
++  "_meta": {
++    "columns": {},
++    "schemas": {},
++    "tables": {}
++  }
++}
+\ No newline at end of file
+diff --git a/db/migrations/meta/_journal.json b/db/migrations/meta/_journal.json
+index 563400e..2848f09 100644
+--- a/db/migrations/meta/_journal.json
++++ b/db/migrations/meta/_journal.json
+@@ -85,6 +85,13 @@
+       "when": 1789574526241,
+       "tag": "0011_hard_wraith",
+       "breakpoints": true
++    },
++    {
++      "idx": 12,
++      "version": "7",
++      "when": 1789760805005,
++      "tag": "0012_add_card_tags_description_duedate_checklist",
++      "breakpoints": true
+     }
+   ]
+ }
+\ No newline at end of file
+diff --git a/db/schema/card-checklist-item.ts b/db/schema/card-checklist-item.ts
+new file mode 100644
+index 0000000..8014cbe
+--- /dev/null
++++ b/db/schema/card-checklist-item.ts
+@@ -0,0 +1,42 @@
++import { relations } from 'drizzle-orm'
++import {
++    boolean,
++    index,
++    integer,
++    pgTable,
++    text,
++    timestamp,
++} from 'drizzle-orm/pg-core'
++import { card } from './card'
++
++export const cardChecklistItem = pgTable(
++    'card_checklist_item',
++    {
++        id: text('id')
++            .primaryKey()
++            .$defaultFn(() => crypto.randomUUID()),
++        cardId: text('card_id')
++            .notNull()
++            .references(() => card.id, { onDelete: 'cascade' }),
++        title: text('title').notNull(),
++        completed: boolean('completed').default(false).notNull(),
++        position: integer('position').notNull(),
++        createdAt: timestamp('created_at').defaultNow().notNull(),
++    },
++    (t) => [
++        index('card_checklist_item_card_id_idx').on(t.cardId),
++    ]
++)
++
++export const cardChecklistItemRelations = relations(
++    cardChecklistItem,
++    ({ one }) => ({
++        card: one(card, {
++            fields: [cardChecklistItem.cardId],
++            references: [card.id],
++        }),
++    })
++)
++
++export type CardChecklistItem = typeof cardChecklistItem.$inferSelect
++export type NewCardChecklistItem = typeof cardChecklistItem.$inferInsert
+diff --git a/db/schema/card-tag.ts b/db/schema/card-tag.ts
+new file mode 100644
+index 0000000..fe33750
+--- /dev/null
++++ b/db/schema/card-tag.ts
+@@ -0,0 +1,26 @@
++import { pgTable, text, primaryKey } from 'drizzle-orm/pg-core'
++
++import { card } from './card'
++import { tag } from './tag'
++
++export const cardTag = pgTable(
++    'card_tag',
++    {
++        cardId: text('card_id')
++            .notNull()
++            .references(() => card.id, {
++                onDelete: 'cascade',
++            }),
++
++        tagId: text('tag_id')
++            .notNull()
++            .references(() => tag.id, {
++                onDelete: 'cascade',
++            }),
++    },
++    (table) => ({
++        pk: primaryKey({
++            columns: [table.cardId, table.tagId],
++        }),
++    })
++)
+diff --git a/db/schema/card.ts b/db/schema/card.ts
+index 17ff4e8..1172cba 100644
+--- a/db/schema/card.ts
++++ b/db/schema/card.ts
+@@ -1,5 +1,12 @@
+ import { relations } from 'drizzle-orm'
+-import { index, integer, pgTable, text, timestamp } from 'drizzle-orm/pg-core'
++import {
++    date,
++    index,
++    integer,
++    pgTable,
++    text,
++    timestamp,
++} from 'drizzle-orm/pg-core'
+ import { boardColumn } from './column'
+ 
+ export const card = pgTable(
+@@ -12,6 +19,10 @@ export const card = pgTable(
+             .notNull()
+             .references(() => boardColumn.id, { onDelete: 'cascade' }),
+         name: text('name').notNull(),
++        description: text('description'),
++        dueDate: date('due_date', {
++            mode: 'date',
++        }),
+         position: integer('position').notNull(),
+         createdAt: timestamp('created_at').defaultNow().notNull(),
+         updatedAt: timestamp('updated_at')
+diff --git a/db/schema/index.ts b/db/schema/index.ts
+index 12ba804..f814c31 100644
+--- a/db/schema/index.ts
++++ b/db/schema/index.ts
+@@ -2,6 +2,8 @@ export * from './auth'
+ export * from './board'
+ export * from './column'
+ export * from './card'
++export * from './card-tag'
++export * from './card-checklist-item'
+ export * from './task'
+ export * from './week-goal'
+ export * from './week-habit'
+diff --git a/lib/board/priority-tag.ts b/lib/board/priority-tag.ts
+new file mode 100644
+index 0000000..9f127ed
+--- /dev/null
++++ b/lib/board/priority-tag.ts
+@@ -0,0 +1,40 @@
++import { and, eq, sql } from 'drizzle-orm'
++
++import { db } from '@/db'
++import { tag } from '@/db/schema/tag'
++
++/**
++ * Nome usado hoje para localizar a tag de prioridade máxima.
++ *
++ * ÚNICO lugar do código que faz essa comparação por nome. Enquanto o
++ * schema de `tag` não tiver um identificador estável (ex.: `slug` ou
++ * um `board.priorityTagId` selecionado explicitamente pelo usuário),
++ * esta é a heurística temporária — mas o restante do app nunca compara
++ * por nome, apenas usa o `id` resolvido aqui.
++ *
++ * Evolução futura sem quebrar quem consome esta função: quando existir
++ * um identificador estável, troque a implementação abaixo para usá-lo
++ * — a assinatura (`userId` → `tagId | null`) pode continuar igual.
++ */
++const PRIORITY_TAG_NAME = 'prioridade máxima'
++
++/**
++ * Resolve o id da tag "Prioridade máxima" do usuário, se existir.
++ * Retorna `null` se o usuário ainda não criou essa tag.
++ */
++export async function getPriorityTagId(
++    userId: string
++): Promise<string | null> {
++    const [match] = await db
++        .select({ id: tag.id })
++        .from(tag)
++        .where(
++            and(
++                eq(tag.userId, userId),
++                sql`lower(${tag.name}) = ${PRIORITY_TAG_NAME}`
++            )
++        )
++        .limit(1)
++
++    return match?.id ?? null
++}
+diff --git a/lib/validators/card.ts b/lib/validators/card.ts
+index c1742f5..c4eef97 100644
+--- a/lib/validators/card.ts
++++ b/lib/validators/card.ts
+@@ -4,3 +4,39 @@ export const cardNameSchema = z
+     .string()
+     .min(1, 'O nome é obrigatório.')
+     .max(120, 'O nome deve ter no máximo 120 caracteres.')
++
++export const cardIdSchema = z.object({
++    cardId: z.string().min(1, 'Card inválido.'),
++})
++
++export const updateCardDetailsSchema = z.object({
++    cardId: z.string().min(1, 'Card inválido.'),
++    description: z.string().max(4000).nullable().optional(),
++    dueDate: z.string().nullable().optional(),
++})
++
++export const toggleCardTagSchema = z.object({
++    cardId: z.string().min(1, 'Card inválido.'),
++    tagId: z.string().min(1, 'Tag inválida.'),
++    attach: z.boolean(),
++})
++
++export const checklistItemTitleSchema = z
++    .string()
++    .trim()
++    .min(1, 'O item não pode ficar vazio.')
++    .max(200, 'O item deve ter no máximo 200 caracteres.')
++
++export const createChecklistItemSchema = z.object({
++    cardId: z.string().min(1, 'Card inválido.'),
++    title: checklistItemTitleSchema,
++})
++
++export const toggleChecklistItemSchema = z.object({
++    id: z.string().min(1, 'Item inválido.'),
++    completed: z.boolean(),
++})
++
++export const deleteChecklistItemSchema = z.object({
++    id: z.string().min(1, 'Item inválido.'),
++})

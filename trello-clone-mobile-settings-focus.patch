@@ -1,0 +1,1003 @@
+diff --git a/app/(app)/configuracoes/page.tsx b/app/(app)/configuracoes/page.tsx
+new file mode 100644
+index 0000000..4d88c44
+--- /dev/null
++++ b/app/(app)/configuracoes/page.tsx
+@@ -0,0 +1,76 @@
++import { headers } from 'next/headers'
++import { redirect } from 'next/navigation'
++import { Settings } from 'lucide-react'
++
++import { auth } from '@/lib/auth'
++import { UpdateNameForm } from '@/components/settings/update-name-form'
++import { ChangePasswordForm } from '@/components/settings/change-password-form'
++
++export default async function ConfiguracoesPage() {
++    const session = await auth.api.getSession({
++        headers: await headers(),
++    })
++
++    if (!session) {
++        redirect('/login')
++    }
++
++    return (
++        <div className="h-full overflow-y-auto bg-[#fbfcff]">
++            <div className="mx-auto max-w-2xl px-4 py-6 sm:px-6 sm:py-8">
++
++                <div className="flex items-center gap-3">
++                    <div className="flex size-10 items-center justify-center rounded-xl bg-blue-600 text-white">
++                        <Settings className="size-5" />
++                    </div>
++
++                    <div>
++                        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
++                            Configurações
++                        </h1>
++                        <p className="text-sm text-slate-500">
++                            Gerencie os dados básicos da sua conta.
++                        </p>
++                    </div>
++                </div>
++
++                <div className="mt-8 space-y-6">
++
++                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
++                        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
++                            Perfil
++                        </h2>
++
++                        <div className="mt-4 space-y-4">
++                            <UpdateNameForm currentName={session.user.name} />
++
++                            <div className="space-y-1.5 border-t border-slate-100 pt-4">
++                                <p className="text-xs font-medium text-slate-400">
++                                    E-mail
++                                </p>
++                                <p className="text-sm text-slate-600">
++                                    {session.user.email}
++                                </p>
++                            </div>
++                        </div>
++                    </section>
++
++                    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
++                        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-400">
++                            Segurança
++                        </h2>
++
++                        <div className="mt-4">
++                            <p className="mb-3 text-sm text-slate-500">
++                                Senha
++                            </p>
++                            <ChangePasswordForm />
++                        </div>
++                    </section>
++
++                </div>
++
++            </div>
++        </div>
++    )
++}
+diff --git a/app/(app)/hoje/_actions/complete-task.ts b/app/(app)/hoje/_actions/complete-task.ts
+index aef053f..ebf8164 100644
+--- a/app/(app)/hoje/_actions/complete-task.ts
++++ b/app/(app)/hoje/_actions/complete-task.ts
+@@ -1,10 +1,10 @@
+ 'use server'
+ 
+-import { and, eq } from 'drizzle-orm'
++import { and, eq, isNull } from 'drizzle-orm'
+ import { revalidatePath } from 'next/cache'
+ 
+ import { db } from '@/db'
+-import { task } from '@/db/schema'
++import { task, focusSession } from '@/db/schema'
+ import { authActionClient } from '@/lib/safe-action'
+ import { completeTaskSchema } from '@/lib/validators/task'
+ 
+@@ -26,16 +26,65 @@ export const completeTask = authActionClient
+                 )
+         } else {
+             // Ainda não concluída → conclui
+-            await db
+-                .update(task)
+-                .set({
+-                    status: 'DONE',
+-                    completedAt: new Date(),
+-                    isTopPriority: false,
+-                })
+-                .where(
+-                    and(eq(task.id, taskId), eq(task.userId, ctx.user.id))
+-                )
++            await db.transaction(async (tx) => {
++                await tx
++                    .update(task)
++                    .set({
++                        status: 'DONE',
++                        completedAt: new Date(),
++                        isTopPriority: false,
++                    })
++                    .where(
++                        and(
++                            eq(task.id, taskId),
++                            eq(task.userId, ctx.user.id)
++                        )
++                    )
++
++                // Se esta tarefa estava em foco (sessão ativa não
++                // finalizada), encerra a sessão junto — sem isso, o
++                // "Foco de hoje" ficaria com uma sessão órfã
++                // apontando pra uma tarefa já concluída, e o usuário
++                // não conseguiria escolher outro foco (a regra de
++                // "só uma sessão ativa por vez" bloquearia).
++                const [activeSession] = await tx
++                    .select()
++                    .from(focusSession)
++                    .where(
++                        and(
++                            eq(focusSession.taskId, taskId),
++                            eq(focusSession.userId, ctx.user.id),
++                            isNull(focusSession.endedAt)
++                        )
++                    )
++                    .limit(1)
++
++                if (activeSession) {
++                    const endedAt = new Date()
++
++                    let durationSeconds = activeSession.accumulatedSeconds
++
++                    if (!activeSession.pausedAt) {
++                        durationSeconds += Math.max(
++                            0,
++                            Math.floor(
++                                (endedAt.getTime() -
++                                    activeSession.startedAt.getTime()) /
++                                1000
++                            )
++                        )
++                    }
++
++                    await tx
++                        .update(focusSession)
++                        .set({
++                            endedAt,
++                            durationSeconds,
++                            pausedAt: null,
++                        })
++                        .where(eq(focusSession.id, activeSession.id))
++                }
++            })
+         }
+ 
+         revalidatePath('/hoje')
+diff --git a/app/(app)/hoje/_actions/start-focus.ts b/app/(app)/hoje/_actions/start-focus.ts
+index a6558e1..f162d68 100644
+--- a/app/(app)/hoje/_actions/start-focus.ts
++++ b/app/(app)/hoje/_actions/start-focus.ts
+@@ -39,7 +39,18 @@ export const startFocus = authActionClient
+                 .limit(1)
+ 
+             if (activeSession.length > 0) {
+-                return activeSession[0]
++                // Já em foco nesta mesma tarefa: idempotente, retorna
++                // a sessão existente.
++                if (activeSession[0].taskId === parsedInput.taskId) {
++                    return activeSession[0]
++                }
++
++                // Sessão ativa em OUTRA tarefa: nunca trocar
++                // silenciosamente (antes isso retornava a sessão
++                // errada como se tivesse iniciado a nova tarefa).
++                throw new Error(
++                    'Já existe uma sessão de foco ativa em outra tarefa. Finalize-a antes de iniciar uma nova.'
++                )
+             }
+ 
+             const [inserted] = await tx
+diff --git a/app/(app)/hoje/page.tsx b/app/(app)/hoje/page.tsx
+index 82eb508..57aaf94 100644
+--- a/app/(app)/hoje/page.tsx
++++ b/app/(app)/hoje/page.tsx
+@@ -19,7 +19,11 @@ import { LastFocusStat } from '@/components/dashboard/last-focus-stat'
+ import { getTodayData } from './_queries/get-today-data'
+ import { getFocusData } from './_queries/get-focus-data'
+ 
+-export default async function HojePage() {
++export default async function HojePage({
++    searchParams,
++}: {
++    searchParams: Promise<{ focus?: string }>
++}) {
+     const session = await auth.api.getSession({
+         headers: await headers(),
+     })
+@@ -28,6 +32,8 @@ export default async function HojePage() {
+         return null
+     }
+ 
++    const { focus: focusTaskId } = await searchParams
++
+     const {
+         todayTasks,
+         completedToday,
+@@ -62,10 +68,14 @@ export default async function HojePage() {
+         INBOX: 'Pessoal',
+     } as const
+ 
++    // Foco de hoje NUNCA é escolhido automaticamente — só a tarefa
++    // que o usuário explicitamente selecionou via "Definir como
++    // foco" (?focus=<id> na URL, sobrevive a refresh). Prioridade
++    // (isTopPriority) é um conceito diferente e não decide o foco.
+     const focusTask =
+-        topPriorities[0] ??
+-        todayTasks[0] ??
+-        null
++        todayTasks.find(
++            (item) => item.id === focusTaskId
++        ) ?? null
+ 
+     function getGreeting() {
+         const hour = Number(
+@@ -177,7 +187,9 @@ export default async function HojePage() {
+                                         : undefined
+                                 }
+                                 activeSession={
+-                                    focusData.activeSession
++                                    focusData.activeSession &&
++                                        focusData.activeSession.taskId ===
++                                        focusTask.id
+                                         ? {
+                                             id:
+                                                 focusData
+@@ -204,9 +216,16 @@ export default async function HojePage() {
+                                 }
+                             />
+                         ) : (
+-                            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">
+-                                Nenhuma tarefa para
+-                                focar hoje.
++                            <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-6 text-center">
++                                <p className="text-sm font-medium text-slate-600">
++                                    Nenhuma tarefa em foco agora.
++                                </p>
++                                <p className="mt-1 text-sm text-slate-400">
++                                    Escolha uma tarefa de hoje para
++                                    começar — use o menu &ldquo;...&rdquo;
++                                    em qualquer tarefa abaixo e toque
++                                    em &ldquo;Definir como foco&rdquo;.
++                                </p>
+                             </div>
+                         )}
+ 
+@@ -258,6 +277,20 @@ export default async function HojePage() {
+                                                     task.status !==
+                                                     'DONE'
+                                                 }
++                                                allowFocus={
++                                                    task.status !==
++                                                    'DONE'
++                                                }
++                                                isFocusTask={
++                                                    task.id ===
++                                                    (focusTask?.id ?? '')
++                                                }
++                                                activeSessionTaskId={
++                                                    focusData
++                                                        .activeSession
++                                                        ?.taskId ??
++                                                    null
++                                                }
+                                             />
+                                         )
+                                     )
+@@ -321,6 +354,20 @@ export default async function HojePage() {
+                                                     task.status !==
+                                                     'DONE'
+                                                 }
++                                                allowFocus={
++                                                    task.status !==
++                                                    'DONE'
++                                                }
++                                                isFocusTask={
++                                                    task.id ===
++                                                    (focusTask?.id ?? '')
++                                                }
++                                                activeSessionTaskId={
++                                                    focusData
++                                                        .activeSession
++                                                        ?.taskId ??
++                                                    null
++                                                }
+                                             />
+                                         )
+                                     )
+diff --git a/app/(app)/layout.tsx b/app/(app)/layout.tsx
+index 070cb99..134628c 100644
+--- a/app/(app)/layout.tsx
++++ b/app/(app)/layout.tsx
+@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
+ 
+ import { auth } from '@/lib/auth'
+ import { AppSidebar } from '@/components/layout/app-sidebar'
++import { MobileNav } from '@/components/layout/mobile-nav'
+ import { LogoutButton } from '@/components/auth/logout-button'
+ 
+ export default async function AppLayout({
+@@ -23,7 +24,13 @@ export default async function AppLayout({
+       <AppSidebar />
+ 
+       <div className="flex min-w-0 flex-1 flex-col">
+-        <header className="flex h-16 shrink-0 items-center justify-end border-b border-border bg-card px-6">
++        {/* Mobile: header + drawer próprios (logo, nome, hambúrguer). */}
++        <div className="md:hidden">
++          <MobileNav userName={session.user.name} />
++        </div>
++
++        {/* Desktop: header atual, sem nenhuma alteração de comportamento. */}
++        <header className="hidden h-16 shrink-0 items-center justify-end border-b border-border bg-card px-6 md:flex">
+           <LogoutButton />
+         </header>
+ 
+diff --git a/components/dashboard/focus-task-checkbox.tsx b/components/dashboard/focus-task-checkbox.tsx
+index 924d74b..74e4e49 100644
+--- a/components/dashboard/focus-task-checkbox.tsx
++++ b/components/dashboard/focus-task-checkbox.tsx
+@@ -1,6 +1,7 @@
+ 'use client'
+ 
+ import { useTransition } from 'react'
++import { usePathname, useRouter, useSearchParams } from 'next/navigation'
+ 
+ import { completeTask } from '@/app/(app)/hoje/_actions/complete-task'
+ import { finishFocus } from '@/app/(app)/hoje/_actions/finish-focus'
+@@ -17,6 +18,10 @@ export function FocusTaskCheckbox({
+     const [isPending, startTransition] =
+         useTransition()
+ 
++    const router = useRouter()
++    const pathname = usePathname()
++    const searchParams = useSearchParams()
++
+     function handleComplete() {
+         if (isPending) {
+             return
+@@ -30,6 +35,16 @@ export function FocusTaskCheckbox({
+             }
+ 
+             await completeTask({ taskId, completed: false })
++
++            // Concluir a tarefa em foco limpa a seleção (?focus=) —
++            // volta ao estado vazio, sem escolher outra
++            // automaticamente.
++            const params = new URLSearchParams(searchParams.toString())
++            params.delete('focus')
++            const query = params.toString()
++            router.replace(query ? `${pathname}?${query}` : pathname, {
++                scroll: false,
++            })
+         })
+     }
+ 
+diff --git a/components/dashboard/focus-timer.tsx b/components/dashboard/focus-timer.tsx
+index 196819e..2d83856 100644
+--- a/components/dashboard/focus-timer.tsx
++++ b/components/dashboard/focus-timer.tsx
+@@ -234,8 +234,10 @@ export function FocusTimer({
+                         <Play className="size-4 fill-current" />
+ 
+                         {isPending
+-                            ? 'Continuando...'
+-                            : 'Continuar'}
++                            ? 'Iniciando...'
++                            : accumulatedSeconds === 0
++                                ? 'Iniciar foco'
++                                : 'Continuar'}
+                     </button>
+                 ) : (
+                     <button
+diff --git a/components/dashboard/task-actions.tsx b/components/dashboard/task-actions.tsx
+index 5e74ca0..4eaeb15 100644
+--- a/components/dashboard/task-actions.tsx
++++ b/components/dashboard/task-actions.tsx
+@@ -1,7 +1,7 @@
+ 'use client'
+ 
+ import { useState, useTransition } from 'react'
+-import { MoreVertical, Pencil, Trash2 } from 'lucide-react'
++import { MoreVertical, Pencil, Target, Trash2 } from 'lucide-react'
+ import { toast } from 'sonner'
+ 
+ import {
+@@ -18,6 +18,12 @@ interface TaskActionsProps {
+     title: string
+     description?: string | null
+     time?: string | null
++    /**
++     * Só passado por quem usa esse menu no contexto de "Hoje" (onde
++     * o conceito de foco existe). Quando ausente, nenhum item novo
++     * aparece — Estudos/Pessoal continuam exatamente como antes.
++     */
++    onSetFocus?: () => void
+ }
+ 
+ export function TaskActions({
+@@ -25,6 +31,7 @@ export function TaskActions({
+     title,
+     description,
+     time,
++    onSetFocus,
+ }: TaskActionsProps) {
+     const [open, setOpen] = useState(false)
+     const [mode, setMode] = useState<'menu' | 'edit' | 'delete'>('menu')
+@@ -119,6 +126,20 @@ export function TaskActions({
+                             Editar
+                         </button>
+ 
++                        {onSetFocus && (
++                            <button
++                                type="button"
++                                onClick={() => {
++                                    onSetFocus()
++                                    setOpen(false)
++                                }}
++                                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-slate-100"
++                            >
++                                <Target className="size-4" />
++                                Definir como foco
++                            </button>
++                        )}
++
+                         <button
+                             type="button"
+                             onClick={() => setMode('delete')}
+diff --git a/components/dashboard/task-row.tsx b/components/dashboard/task-row.tsx
+index 3bb6501..6531e1f 100644
+--- a/components/dashboard/task-row.tsx
++++ b/components/dashboard/task-row.tsx
+@@ -1,7 +1,8 @@
+ 'use client'
+ 
+ import { useTransition } from 'react'
+-import { Clock3, MoreVertical, Star } from 'lucide-react'
++import { usePathname, useRouter, useSearchParams } from 'next/navigation'
++import { Clock3, Star } from 'lucide-react'
+ import { toast } from 'sonner'
+ import { completeTask } from '@/app/(app)/hoje/_actions/complete-task'
+ import { AreaBadge } from './area-badge'
+@@ -17,6 +18,21 @@ interface TaskRowProps {
+     completed?: boolean
+     topPriority?: boolean
+     allowPriority?: boolean
++    /**
++     * Mostra "Definir como foco" no menu "...". Só faz sentido na
++     * página Hoje — os demais usos de TaskRow simplesmente não
++     * passam essa prop.
++     */
++    allowFocus?: boolean
++    /** Esta é a tarefa atualmente selecionada como foco (?focus=id). */
++    isFocusTask?: boolean
++    /**
++     * Id da tarefa com sessão de foco ativa (rodando ou pausada),
++     * se houver — independente de qual tarefa está selecionada.
++     * Usado só pra bloquear troca de seleção com sessão ativa em
++     * outra tarefa.
++     */
++    activeSessionTaskId?: string | null
+ }
+ 
+ export function TaskRow({
+@@ -27,9 +43,37 @@ export function TaskRow({
+     time,
+     completed = false,
+     topPriority = false,
+-    allowPriority = false
++    allowPriority = false,
++    allowFocus = false,
++    isFocusTask = false,
++    activeSessionTaskId = null,
+ }: TaskRowProps) {
+     const [isPending, startTransition] = useTransition()
++    const router = useRouter()
++    const pathname = usePathname()
++    const searchParams = useSearchParams()
++
++    function handleSetFocus() {
++        if (activeSessionTaskId && activeSessionTaskId !== id) {
++            toast.error(
++                'Já existe uma sessão de foco ativa em outra tarefa. Finalize-a antes de escolher outra.'
++            )
++            return
++        }
++
++        const params = new URLSearchParams(searchParams.toString())
++        params.set('focus', id)
++        router.replace(`${pathname}?${params.toString()}`, { scroll: false })
++    }
++
++    function clearFocusSelection() {
++        const params = new URLSearchParams(searchParams.toString())
++        params.delete('focus')
++        const query = params.toString()
++        router.replace(query ? `${pathname}?${query}` : pathname, {
++            scroll: false,
++        })
++    }
+ 
+     function handlePriority() {
+         if (isPending) {
+@@ -61,6 +105,15 @@ export function TaskRow({
+ 
+             if (result?.serverError) {
+                 toast.error(result.serverError)
++                return
++            }
++
++            // Concluir a tarefa que estava em foco limpa a seleção
++            // (?focus=) — completeTask já finaliza a sessão ativa
++            // dela no servidor; aqui só tiramos o parâmetro da URL,
++            // já que isso é estado do navegador, não do banco.
++            if (!completed && isFocusTask) {
++                clearFocusSelection()
+             }
+         })
+     }
+@@ -137,6 +190,11 @@ export function TaskRow({
+                 title={title}
+                 description={description}
+                 time={time}
++                onSetFocus={
++                    allowFocus && !completed
++                        ? handleSetFocus
++                        : undefined
++                }
+             />
+         </div>
+     )
+diff --git a/components/layout/app-sidebar.tsx b/components/layout/app-sidebar.tsx
+index 8f65f5b..dc5630c 100644
+--- a/components/layout/app-sidebar.tsx
++++ b/components/layout/app-sidebar.tsx
+@@ -10,10 +10,11 @@ import {
+     GraduationCap,
+     UserRound,
+     CircleCheckBig,
+-    Tags
++    Tags,
++    Settings
+ } from 'lucide-react'
+ 
+-const items = [
++export const items = [
+     {
+         label: 'Hoje',
+         href: '/hoje',
+@@ -103,7 +104,25 @@ export function AppSidebar() {
+                 })}
+             </nav>
+ 
+-            <div className="p-4">
++            <div className="space-y-1 p-4">
++                <div className="mb-1 h-px bg-border" />
++
++                <Link
++                    href="/configuracoes"
++                    className={[
++                        'flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors',
++                        pathname === '/configuracoes' ||
++                            pathname.startsWith('/configuracoes')
++                            ? 'bg-blue-50 font-medium text-blue-600'
++                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
++                    ].join(' ')}
++                >
++                    <Settings className="size-4" />
++                    <span>Configurações</span>
++                </Link>
++            </div>
++
++            <div className="p-4 pt-0">
+                 <div className="rounded-xl bg-blue-50 p-4">
+                     <p className="text-xs leading-5 text-blue-700">
+                         Pequenos passos também são progresso.
+diff --git a/components/layout/mobile-nav.tsx b/components/layout/mobile-nav.tsx
+new file mode 100644
+index 0000000..c077e27
+--- /dev/null
++++ b/components/layout/mobile-nav.tsx
+@@ -0,0 +1,148 @@
++'use client'
++
++import { useState } from 'react'
++import Link from 'next/link'
++import { usePathname, useRouter } from 'next/navigation'
++import { Loader2, LogOut, Menu, Settings } from 'lucide-react'
++
++import { items } from '@/components/layout/app-sidebar'
++import { authClient } from '@/lib/auth-client'
++import {
++    Sheet,
++    SheetContent,
++    SheetHeader,
++    SheetTitle,
++} from '@/components/ui/sheet'
++
++interface MobileNavProps {
++    userName: string | null
++}
++
++/**
++ * Header + drawer mobile. Só existem no mobile (o layout controla a
++ * visibilidade via `md:hidden`) — no desktop a sidebar/header atuais
++ * continuam exatamente como estavam.
++ */
++export function MobileNav({ userName }: MobileNavProps) {
++    const [open, setOpen] = useState(false)
++    const pathname = usePathname()
++    const router = useRouter()
++    const [isLoggingOut, setIsLoggingOut] = useState(false)
++
++    const firstName = userName?.trim().split(' ')[0] ?? null
++
++    async function handleLogout() {
++        setIsLoggingOut(true)
++        await authClient.signOut()
++        setOpen(false)
++        router.push('/login')
++        router.refresh()
++    }
++
++    return (
++        <>
++            <header className="flex h-14 w-full shrink-0 items-center justify-between border-b border-border bg-card px-4">
++                <div className="flex min-w-0 items-center gap-2">
++                    <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary">
++                        <div className="flex gap-1">
++                            <span className="h-3 w-1 rounded-sm bg-primary-foreground" />
++                            <span className="h-2 w-1 rounded-sm bg-primary-foreground" />
++                        </div>
++                    </div>
++
++                    <span className="truncate text-sm font-semibold tracking-tight text-foreground">
++                        Meu Board
++                    </span>
++                </div>
++
++                <div className="flex shrink-0 items-center gap-3">
++                    {firstName && (
++                        <span className="max-w-20 truncate text-sm text-muted-foreground">
++                            {firstName}
++                        </span>
++                    )}
++
++                    <button
++                        type="button"
++                        onClick={() => setOpen(true)}
++                        aria-label="Abrir menu"
++                        className="flex size-9 items-center justify-center rounded-lg text-foreground hover:bg-muted"
++                    >
++                        <Menu className="size-5" />
++                    </button>
++                </div>
++            </header>
++
++            <Sheet open={open} onOpenChange={setOpen}>
++                <SheetContent className="w-72">
++                    <SheetHeader className="shrink-0">
++                        <SheetTitle>Meu Board</SheetTitle>
++                        {userName && (
++                            <p className="text-sm text-muted-foreground">
++                                {userName}
++                            </p>
++                        )}
++                    </SheetHeader>
++
++                    <nav className="min-h-0 flex-1 space-y-1 overflow-y-auto p-4">
++                        {items.map((item) => {
++                            const Icon = item.icon
++
++                            const isActive =
++                                pathname === item.href ||
++                                (item.href !== '/' &&
++                                    pathname.startsWith(item.href))
++
++                            return (
++                                <Link
++                                    key={item.href}
++                                    href={item.href}
++                                    onClick={() => setOpen(false)}
++                                    className={[
++                                        'flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors',
++                                        isActive
++                                            ? 'bg-blue-50 font-medium text-blue-600'
++                                            : 'text-muted-foreground hover:bg-muted hover:text-foreground',
++                                    ].join(' ')}
++                                >
++                                    <Icon className="size-4 shrink-0" />
++                                    <span>{item.label}</span>
++                                </Link>
++                            )
++                        })}
++
++                        <div className="my-2 h-px bg-border" />
++
++                        <Link
++                            href="/configuracoes"
++                            onClick={() => setOpen(false)}
++                            className={[
++                                'flex items-center gap-3 rounded-lg px-3 py-3 text-sm transition-colors',
++                                pathname === '/configuracoes'
++                                    ? 'bg-blue-50 font-medium text-blue-600'
++                                    : 'text-muted-foreground hover:bg-muted hover:text-foreground',
++                            ].join(' ')}
++                        >
++                            <Settings className="size-4 shrink-0" />
++                            <span>Configurações</span>
++                        </Link>
++
++                        <button
++                            type="button"
++                            onClick={handleLogout}
++                            disabled={isLoggingOut}
++                            className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
++                        >
++                            {isLoggingOut ? (
++                                <Loader2 className="size-4 shrink-0 animate-spin" />
++                            ) : (
++                                <LogOut className="size-4 shrink-0" />
++                            )}
++                            <span>Sair</span>
++                        </button>
++                    </nav>
++                </SheetContent>
++            </Sheet>
++        </>
++    )
++}
+diff --git a/components/settings/change-password-form.tsx b/components/settings/change-password-form.tsx
+new file mode 100644
+index 0000000..488fad1
+--- /dev/null
++++ b/components/settings/change-password-form.tsx
+@@ -0,0 +1,149 @@
++'use client'
++
++import { useState } from 'react'
++import { useForm } from 'react-hook-form'
++import { zodResolver } from '@hookform/resolvers/zod'
++import { z } from 'zod'
++import { Loader2 } from 'lucide-react'
++import { toast } from 'sonner'
++
++import { authClient } from '@/lib/auth-client'
++import { Button } from '@/components/ui/button'
++import { Input } from '@/components/ui/input'
++import { Label } from '@/components/ui/label'
++
++const passwordSchema = z
++    .object({
++        currentPassword: z.string().min(1, 'Informe sua senha atual.'),
++        newPassword: z
++            .string()
++            .min(8, 'A nova senha deve ter pelo menos 8 caracteres.'),
++        confirmPassword: z.string().min(1, 'Confirme a nova senha.'),
++    })
++    .refine((data) => data.newPassword === data.confirmPassword, {
++        message: 'As senhas não coincidem.',
++        path: ['confirmPassword'],
++    })
++
++type PasswordForm = z.infer<typeof passwordSchema>
++
++export function ChangePasswordForm() {
++    const [open, setOpen] = useState(false)
++    const [isSubmitting, setIsSubmitting] = useState(false)
++
++    const {
++        register,
++        handleSubmit,
++        reset,
++        formState: { errors },
++    } = useForm<PasswordForm>({
++        resolver: zodResolver(passwordSchema),
++    })
++
++    async function onSubmit(data: PasswordForm) {
++        setIsSubmitting(true)
++
++        const { error } = await authClient.changePassword({
++            currentPassword: data.currentPassword,
++            newPassword: data.newPassword,
++            revokeOtherSessions: false,
++        })
++
++        setIsSubmitting(false)
++
++        if (error) {
++            toast.error(error.message ?? 'Erro ao alterar a senha.')
++            return
++        }
++
++        toast.success('Senha alterada.')
++        reset()
++        setOpen(false)
++    }
++
++    if (!open) {
++        return (
++            <Button
++                type="button"
++                variant="outline"
++                onClick={() => setOpen(true)}
++            >
++                Alterar senha
++            </Button>
++        )
++    }
++
++    return (
++        <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
++            <div className="space-y-1.5">
++                <Label htmlFor="current-password">Senha atual</Label>
++                <Input
++                    id="current-password"
++                    type="password"
++                    autoComplete="current-password"
++                    {...register('currentPassword')}
++                />
++                {errors.currentPassword && (
++                    <p className="text-xs text-red-600">
++                        {errors.currentPassword.message}
++                    </p>
++                )}
++            </div>
++
++            <div className="space-y-1.5">
++                <Label htmlFor="new-password">Nova senha</Label>
++                <Input
++                    id="new-password"
++                    type="password"
++                    autoComplete="new-password"
++                    {...register('newPassword')}
++                />
++                {errors.newPassword && (
++                    <p className="text-xs text-red-600">
++                        {errors.newPassword.message}
++                    </p>
++                )}
++            </div>
++
++            <div className="space-y-1.5">
++                <Label htmlFor="confirm-password">Confirmar nova senha</Label>
++                <Input
++                    id="confirm-password"
++                    type="password"
++                    autoComplete="new-password"
++                    {...register('confirmPassword')}
++                />
++                {errors.confirmPassword && (
++                    <p className="text-xs text-red-600">
++                        {errors.confirmPassword.message}
++                    </p>
++                )}
++            </div>
++
++            <div className="flex gap-2">
++                <Button
++                    type="button"
++                    variant="outline"
++                    onClick={() => {
++                        setOpen(false)
++                        reset()
++                    }}
++                    disabled={isSubmitting}
++                >
++                    Cancelar
++                </Button>
++
++                <Button
++                    type="submit"
++                    disabled={isSubmitting}
++                    className="bg-blue-600 text-white hover:bg-blue-700"
++                >
++                    {isSubmitting && (
++                        <Loader2 className="mr-1.5 size-4 animate-spin" />
++                    )}
++                    Confirmar nova senha
++                </Button>
++            </div>
++        </form>
++    )
++}
+diff --git a/components/settings/update-name-form.tsx b/components/settings/update-name-form.tsx
+new file mode 100644
+index 0000000..8734634
+--- /dev/null
++++ b/components/settings/update-name-form.tsx
+@@ -0,0 +1,85 @@
++'use client'
++
++import { useState } from 'react'
++import { useRouter } from 'next/navigation'
++import { useForm } from 'react-hook-form'
++import { zodResolver } from '@hookform/resolvers/zod'
++import { z } from 'zod'
++import { Loader2 } from 'lucide-react'
++import { toast } from 'sonner'
++
++import { authClient } from '@/lib/auth-client'
++import { Button } from '@/components/ui/button'
++import { Input } from '@/components/ui/input'
++import { Label } from '@/components/ui/label'
++
++const nameSchema = z.object({
++    name: z
++        .string()
++        .trim()
++        .min(1, 'Informe seu nome.')
++        .max(100, 'O nome deve ter no máximo 100 caracteres.'),
++})
++
++type NameForm = z.infer<typeof nameSchema>
++
++interface UpdateNameFormProps {
++    currentName: string
++}
++
++export function UpdateNameForm({ currentName }: UpdateNameFormProps) {
++    const router = useRouter()
++    const [isSubmitting, setIsSubmitting] = useState(false)
++
++    const {
++        register,
++        handleSubmit,
++        formState: { errors, isDirty },
++    } = useForm<NameForm>({
++        resolver: zodResolver(nameSchema),
++        defaultValues: { name: currentName },
++    })
++
++    async function onSubmit(data: NameForm) {
++        setIsSubmitting(true)
++
++        const { error } = await authClient.updateUser({ name: data.name })
++
++        setIsSubmitting(false)
++
++        if (error) {
++            toast.error(error.message ?? 'Erro ao atualizar o nome.')
++            return
++        }
++
++        toast.success('Nome atualizado.')
++
++        // A sessão é lida no Server Component do layout (app/(app)/layout.tsx)
++        // — refresh recarrega os dados do servidor e reflete o novo nome
++        // em toda a UI (sidebar mobile incluída), sem request extra manual.
++        router.refresh()
++    }
++
++    return (
++        <form onSubmit={handleSubmit(onSubmit)} className="space-y-3">
++            <div className="space-y-1.5">
++                <Label htmlFor="settings-name">Nome</Label>
++                <Input id="settings-name" {...register('name')} />
++                {errors.name && (
++                    <p className="text-xs text-red-600">{errors.name.message}</p>
++                )}
++            </div>
++
++            <Button
++                type="submit"
++                disabled={isSubmitting || !isDirty}
++                className="bg-blue-600 text-white hover:bg-blue-700"
++            >
++                {isSubmitting && (
++                    <Loader2 className="mr-1.5 size-4 animate-spin" />
++                )}
++                Salvar alterações
++            </Button>
++        </form>
++    )
++}

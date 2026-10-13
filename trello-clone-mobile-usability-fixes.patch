@@ -1,0 +1,1528 @@
+diff --git a/app/(app)/semana/_components/week-planner-dialog.tsx b/app/(app)/semana/_components/week-planner-dialog.tsx
+index 6e13472..490423a 100644
+--- a/app/(app)/semana/_components/week-planner-dialog.tsx
++++ b/app/(app)/semana/_components/week-planner-dialog.tsx
+@@ -9,6 +9,14 @@ import {
+     Sprout,
+     X,
+ } from 'lucide-react'
++import {
++    Dialog,
++    DialogContent,
++    DialogHeader,
++    DialogTitle,
++    DialogDescription,
++    DialogFooter,
++} from '@/components/ui/dialog'
+ 
+ interface WeekPlannerDialogProps {
+     weekLabel: string
+@@ -56,19 +64,6 @@ export function WeekPlannerDialog({
+             ],
+     )
+ 
+-    if (!open) {
+-        return (
+-            <button
+-                type="button"
+-                onClick={() => setOpen(true)}
+-                className="flex h-14.5 items-center justify-center gap-3 rounded-xl bg-blue-600 px-8 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+-            >
+-                <Plus className="size-5" />
+-                Planejar semana
+-            </button>
+-        )
+-    }
+-
+     function handleSave() {
+         startTransition(async () => {
+             const result = await createWeekPlan({
+@@ -132,212 +127,205 @@ export function WeekPlannerDialog({
+     }
+ 
+     return (
+-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+-            <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-xl">
+-                {/* HEADER */}
+-                <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
+-                    <div>
+-                        <h2 className="text-xl font-bold text-[#071958]">
++        <>
++            <button
++                type="button"
++                onClick={() => setOpen(true)}
++                className="flex h-14.5 items-center justify-center gap-3 rounded-xl bg-blue-600 px-8 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
++            >
++                <Plus className="size-5" />
++                Planejar semana
++            </button>
++
++            <Dialog open={open} onOpenChange={setOpen}>
++                <DialogContent className="max-w-3xl">
++                    <DialogHeader>
++                        <DialogTitle className="text-xl font-bold text-[#071958]">
+                             Planejar minha semana
+-                        </h2>
++                        </DialogTitle>
++                        <DialogDescription>{weekLabel}</DialogDescription>
++                    </DialogHeader>
++
++                    <div className="flex flex-col gap-8">
++                        {/* OBJETIVOS */}
++                        <section>
++                            <div className="mb-4 flex items-center gap-3">
++                                <div className="flex size-9 items-center justify-center rounded-full bg-blue-600 text-white">
++                                    <Target className="size-5" />
++                                </div>
+ 
+-                        <p className="mt-1 text-sm text-slate-500">
+-                            {weekLabel}
+-                        </p>
+-                    </div>
++                                <div>
++                                    <h3 className="font-bold text-[#071958]">
++                                        Objetivos da semana
++                                    </h3>
+ 
+-                    <button
+-                        type="button"
+-                        onClick={() => setOpen(false)}
+-                        className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+-                    >
+-                        <X className="size-5" />
+-                    </button>
+-                </div>
+-
+-                <div className="space-y-8 px-6 py-6">
+-                    {/* OBJETIVOS */}
+-                    <section>
+-                        <div className="mb-4 flex items-center gap-3">
+-                            <div className="flex size-9 items-center justify-center rounded-full bg-blue-600 text-white">
+-                                <Target className="size-5" />
++                                    <p className="text-xs text-slate-500">
++                                        Defina seus principais focos para a semana.
++                                    </p>
++                                </div>
+                             </div>
+ 
+-                            <div>
+-                                <h3 className="font-bold text-[#071958]">
+-                                    Objetivos da semana
+-                                </h3>
+-
+-                                <p className="text-xs text-slate-500">
+-                                    Defina seus principais focos para a semana.
+-                                </p>
++                            <div className="space-y-3">
++                                {goals.map((goal, index) => (
++                                    <div
++                                        key={index}
++                                        className="flex items-center gap-2"
++                                    >
++                                        <input
++                                            type="text"
++                                            value={goal}
++                                            onChange={(event) => {
++                                                const updated = [
++                                                    ...goals,
++                                                ]
++
++                                                updated[index] =
++                                                    event.target.value
++
++                                                setGoals(updated)
++                                            }}
++                                            placeholder={`Objetivo ${index + 1}`}
++                                            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-base outline-none transition focus:border-blue-400 sm:text-sm"
++                                        />
++
++                                        <button
++                                            type="button"
++                                            onClick={() =>
++                                                removeGoal(index)
++                                            }
++                                            className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500"
++                                        >
++                                            <X className="size-4" />
++                                        </button>
++                                    </div>
++                                ))}
++
++                                <button
++                                    type="button"
++                                    onClick={addGoal}
++                                    className="flex items-center gap-2 text-sm font-medium text-blue-600 transition hover:text-blue-700"
++                                >
++                                    <Plus className="size-4" />
++                                    Adicionar objetivo
++                                </button>
+                             </div>
+-                        </div>
++                        </section>
+ 
+-                        <div className="space-y-3">
+-                            {goals.map((goal, index) => (
+-                                <div
+-                                    key={index}
+-                                    className="flex items-center gap-2"
+-                                >
+-                                    <input
+-                                        type="text"
+-                                        value={goal}
+-                                        onChange={(event) => {
+-                                            const updated = [
+-                                                ...goals,
+-                                            ]
+-
+-                                            updated[index] =
+-                                                event.target.value
+-
+-                                            setGoals(updated)
+-                                        }}
+-                                        placeholder={`Objetivo ${index + 1}`}
+-                                        className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-blue-400"
+-                                    />
+-
+-                                    <button
+-                                        type="button"
+-                                        onClick={() =>
+-                                            removeGoal(index)
+-                                        }
+-                                        className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition hover:border-red-200 hover:bg-red-50 hover:text-red-500"
+-                                    >
+-                                        <X className="size-4" />
+-                                    </button>
++                        {/* HÁBITOS */}
++                        <section>
++                            <div className="mb-4 flex items-center gap-3">
++                                <Sprout className="size-8 text-emerald-500" />
++
++                                <div>
++                                    <h3 className="font-bold text-[#071958]">
++                                        Hábitos da semana
++                                    </h3>
++
++                                    <p className="text-xs text-slate-500">
++                                        Escolha hábitos que deseja acompanhar.
++                                    </p>
+                                 </div>
+-                            ))}
+-
+-                            <button
+-                                type="button"
+-                                onClick={addGoal}
+-                                className="flex items-center gap-2 text-sm font-medium text-blue-600 transition hover:text-blue-700"
+-                            >
+-                                <Plus className="size-4" />
+-                                Adicionar objetivo
+-                            </button>
+-                        </div>
+-                    </section>
+-
+-                    {/* HÁBITOS */}
+-                    <section>
+-                        <div className="mb-4 flex items-center gap-3">
+-                            <Sprout className="size-8 text-emerald-500" />
+-
+-                            <div>
+-                                <h3 className="font-bold text-[#071958]">
+-                                    Hábitos da semana
+-                                </h3>
+-
+-                                <p className="text-xs text-slate-500">
+-                                    Escolha hábitos que deseja acompanhar.
+-                                </p>
+                             </div>
+-                        </div>
+ 
+-                        <div className="space-y-3">
+-                            {habits.map((habit, index) => (
+-                                <div
+-                                    key={index}
+-                                    className="flex items-center gap-3 rounded-xl border border-slate-200 px-4 py-3"
+-                                >
+-                                    <input
+-                                        type="text"
+-                                        value={habit.title}
+-                                        onChange={(event) => {
+-                                            const updated = [
+-                                                ...habits,
+-                                            ]
+-
+-                                            updated[index] = {
+-                                                ...habit,
+-                                                title:
+-                                                    event.target.value,
+-                                            }
+-
+-                                            setHabits(updated)
+-                                        }}
+-                                        placeholder="Nome do hábito"
+-                                        className="min-w-0 flex-1 bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+-                                    />
+-
+-                                    <select
+-                                        value={habit.targetDays}
+-                                        onChange={(event) => {
+-                                            const updated = [
+-                                                ...habits,
+-                                            ]
+-
+-                                            updated[index] = {
+-                                                ...habit,
+-                                                targetDays: Number(
+-                                                    event.target.value,
+-                                                ),
++                            <div className="space-y-3">
++                                {habits.map((habit, index) => (
++                                    <div
++                                        key={index}
++                                        className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 px-4 py-3"
++                                    >
++                                        <input
++                                            type="text"
++                                            value={habit.title}
++                                            onChange={(event) => {
++                                                const updated = [
++                                                    ...habits,
++                                                ]
++
++                                                updated[index] = {
++                                                    ...habit,
++                                                    title:
++                                                        event.target.value,
++                                                }
++
++                                                setHabits(updated)
++                                            }}
++                                            placeholder="Nome do hábito"
++                                            className="min-w-0 flex-1 bg-transparent text-base text-slate-700 outline-none placeholder:text-slate-400 sm:text-sm"
++                                        />
++
++                                        <select
++                                            value={habit.targetDays}
++                                            onChange={(event) => {
++                                                const updated = [
++                                                    ...habits,
++                                                ]
++
++                                                updated[index] = {
++                                                    ...habit,
++                                                    targetDays: Number(
++                                                        event.target.value,
++                                                    ),
++                                                }
++
++                                                setHabits(updated)
++                                            }}
++                                            className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 outline-none"
++                                        >
++                                            <option value={7}>7 dias</option>
++                                            <option value={6}>6 dias</option>
++                                            <option value={5}>5 dias</option>
++                                            <option value={4}>4 dias</option>
++                                            <option value={3}>3 dias</option>
++                                            <option value={2}>2 dias</option>
++                                            <option value={1}>1 dia</option>
++                                        </select>
++
++                                        <button
++                                            type="button"
++                                            onClick={() =>
++                                                removeHabit(index)
+                                             }
++                                            className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-500"
++                                        >
++                                            <X className="size-4" />
++                                        </button>
++                                    </div>
++                                ))}
++
++                                <button
++                                    type="button"
++                                    onClick={addHabit}
++                                    className="flex items-center gap-2 text-sm font-medium text-blue-600 transition hover:text-blue-700"
++                                >
++                                    <Plus className="size-4" />
++                                    Adicionar hábito
++                                </button>
++                            </div>
++                        </section>
++                    </div>
+ 
+-                                            setHabits(updated)
+-                                        }}
+-                                        className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 outline-none"
+-                                    >
+-                                        <option value={7}>7 dias</option>
+-                                        <option value={6}>6 dias</option>
+-                                        <option value={5}>5 dias</option>
+-                                        <option value={4}>4 dias</option>
+-                                        <option value={3}>3 dias</option>
+-                                        <option value={2}>2 dias</option>
+-                                        <option value={1}>1 dia</option>
+-                                    </select>
+-
+-                                    <button
+-                                        type="button"
+-                                        onClick={() =>
+-                                            removeHabit(index)
+-                                        }
+-                                        className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-red-50 hover:text-red-500"
+-                                    >
+-                                        <X className="size-4" />
+-                                    </button>
+-                                </div>
+-                            ))}
+-
+-                            <button
+-                                type="button"
+-                                onClick={addHabit}
+-                                className="flex items-center gap-2 text-sm font-medium text-blue-600 transition hover:text-blue-700"
+-                            >
+-                                <Plus className="size-4" />
+-                                Adicionar hábito
+-                            </button>
+-                        </div>
+-
+-
+-                    </section>
+-                </div>
+-
+-                {/* FOOTER */}
+-                <div className="flex justify-end gap-3 border-t border-slate-200 px-6 py-4">
+-                    <button
+-                        type="button"
+-                        onClick={() => setOpen(false)}
+-                        className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+-                    >
+-                        Cancelar
+-                    </button>
+-
+-                    <button
+-                        type="button"
+-                        disabled={isPending}
+-                        onClick={handleSave}
+-                        className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+-                    >
+-                        {isPending
+-                            ? 'Salvando...'
+-                            : 'Salvar planejamento'}
+-                    </button>
+-                </div>
+-            </div>
+-        </div>
++                    <DialogFooter>
++                        <button
++                            type="button"
++                            onClick={() => setOpen(false)}
++                            className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
++                        >
++                            Cancelar
++                        </button>
++
++                        <button
++                            type="button"
++                            disabled={isPending}
++                            onClick={handleSave}
++                            className="rounded-lg bg-blue-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
++                        >
++                            {isPending
++                                ? 'Salvando...'
++                                : 'Salvar planejamento'}
++                        </button>
++                    </DialogFooter>
++                </DialogContent>
++            </Dialog>
++        </>
+     )
+ }
+-
+diff --git a/app/(app)/semana/page.tsx b/app/(app)/semana/page.tsx
+index 20e6d6c..1b34ed7 100644
+--- a/app/(app)/semana/page.tsx
++++ b/app/(app)/semana/page.tsx
+@@ -160,7 +160,7 @@ export default async function SemanaPage({
+             : Math.round((completedCount / totalCount) * 100);
+ 
+     return (
+-        <div className="h-full overflow-y-auto bg-[#f8fbff]">
++        <div className="h-full overflow-x-hidden overflow-y-auto bg-[#f8fbff]">
+             <div className="mx-auto w-full max-w-[1800px] px-6 py-6 2xl:px-8">
+                 {/* HEADER */}
+                 <div className="mb-6 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+@@ -276,8 +276,12 @@ export default async function SemanaPage({
+                 </div>
+ 
+                 {/* DIAS DA SEMANA */}
+-                <div className="overflow-x-auto pb-2">
+-                    <div className="grid min-w-325 grid-cols-7 gap-2">
++                <div className="relative">
++                    {/* Indicador sutil de que há mais conteúdo pro lado — só no mobile */}
++                    <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-6 bg-gradient-to-r from-[#f8fbff] to-transparent md:hidden" />
++                    <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l from-[#f8fbff] to-transparent md:hidden" />
++
++                    <div className="flex gap-2 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch] md:grid md:grid-cols-7 md:overflow-visible">
+                         {days.map((day) => {
+                             const dayKey = getDateKey(day);
+ 
+@@ -309,7 +313,7 @@ export default async function SemanaPage({
+                                 <section
+                                     key={day.toISOString()}
+                                     className={[
+-                                        "flex min-h-100 flex-col rounded-xl border bg-white px-4 py-4 shadow-sm transition",
++                                        "flex min-h-100 min-w-65 shrink-0 flex-col rounded-xl border bg-white px-4 py-4 shadow-sm transition md:min-w-0 md:shrink",
+                                         isToday
+                                             ? "border-blue-400 bg-blue-50/30 ring-1 ring-blue-200"
+                                             : "border-slate-200",
+diff --git a/components/dashboard/edit-inbox-task-modal.tsx b/components/dashboard/edit-inbox-task-modal.tsx
+index 0215fcc..4332096 100644
+--- a/components/dashboard/edit-inbox-task-modal.tsx
++++ b/components/dashboard/edit-inbox-task-modal.tsx
+@@ -1,10 +1,18 @@
+ "use client";
+ 
+ import { useMemo, useState, useTransition } from "react";
+-import { Loader2, X } from "lucide-react";
++import { Loader2 } from "lucide-react";
+ import { useRouter } from "next/navigation";
+ import { toast } from "sonner";
+ import { updateInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud";
++import {
++    Dialog,
++    DialogContent,
++    DialogHeader,
++    DialogTitle,
++    DialogDescription,
++    DialogFooter,
++} from "@/components/ui/dialog";
+ 
+ interface TagOption { id: string; name: string; color: string; }
+ interface Props {
+@@ -24,7 +32,6 @@ export function EditInboxTaskModal({ open, onClose, task, availableTags }: Props
+     const router = useRouter();
+ 
+     const selectedTags = useMemo(() => availableTags.filter((item) => selectedTagIds.includes(item.id)), [availableTags, selectedTagIds]);
+-    if (!open) return null;
+ 
+     function toggleTag(tagId: string) {
+         setSelectedTagIds((current) => current.includes(tagId) ? current.filter((id) => id !== tagId) : [...current, tagId]);
+@@ -48,37 +55,34 @@ export function EditInboxTaskModal({ open, onClose, task, availableTags }: Props
+     }
+ 
+     return (
+-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+-            <div className="w-full max-w-xl rounded-2xl bg-white shadow-xl">
+-                <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
+-                    <div>
+-                        <h2 className="text-xl font-semibold text-slate-900">Editar tarefa</h2>
+-                        <p className="mt-1 text-sm text-slate-500">Atualize as informações da sua captura.</p>
+-                    </div>
+-                    <button type="button" onClick={onClose} className="flex size-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100"><X className="size-5" /></button>
+-                </div>
+-
+-                <form onSubmit={handleSubmit} className="space-y-5 p-6">
++        <Dialog open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
++            <DialogContent className="max-w-xl">
++                <DialogHeader>
++                    <DialogTitle>Editar tarefa</DialogTitle>
++                    <DialogDescription>Atualize as informações da sua captura.</DialogDescription>
++                </DialogHeader>
++
++                <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+                     <div>
+                         <label className="mb-2 block text-sm font-medium text-slate-700">Tarefa</label>
+-                        <input value={title} onChange={(e) => setTitle(e.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
++                        <input value={title} onChange={(e) => setTitle(e.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-base outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm" />
+                     </div>
+ 
+                     <div>
+                         <label className="mb-2 block text-sm font-medium text-slate-700">Descrição</label>
+-                        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="w-full resize-none rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100" />
++                        <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="w-full resize-none rounded-xl border border-slate-200 px-3 py-3 text-base outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm" />
+                     </div>
+ 
+                     <div className="grid gap-4 sm:grid-cols-2">
+                         <div>
+                             <label className="mb-2 block text-sm font-medium text-slate-700">Prioridade</label>
+-                            <select value={priority} onChange={(e) => setPriority(e.target.value as "LOW" | "MEDIUM" | "HIGH")} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none">
++                            <select value={priority} onChange={(e) => setPriority(e.target.value as "LOW" | "MEDIUM" | "HIGH")} className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base text-slate-700 outline-none sm:text-sm">
+                                 <option value="LOW">Baixa</option><option value="MEDIUM">Média</option><option value="HIGH">Alta</option>
+                             </select>
+                         </div>
+                         <div>
+                             <label className="mb-2 block text-sm font-medium text-slate-700">Data</label>
+-                            <input type="date" value={plannedDate} onChange={(e) => setPlannedDate(e.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm text-slate-700 outline-none" />
++                            <input type="date" value={plannedDate} onChange={(e) => setPlannedDate(e.target.value)} className="h-11 w-full rounded-xl border border-slate-200 px-3 text-base text-slate-700 outline-none sm:text-sm" />
+                         </div>
+                     </div>
+ 
+@@ -96,12 +100,12 @@ export function EditInboxTaskModal({ open, onClose, task, availableTags }: Props
+                         {selectedTags.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{selectedTags.map((item) => <span key={item.id} className="rounded-md px-2.5 py-1 text-xs font-medium text-white" style={{ backgroundColor: item.color }}>{item.name}</span>)}</div>}
+                     </div>
+ 
+-                    <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
++                    <DialogFooter>
+                         <button type="button" onClick={onClose} disabled={isPending} className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancelar</button>
+-                        <button type="submit" disabled={isPending || !title.trim()} className="flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{isPending && <Loader2 className="size-4 animate-spin" />}Salvar alterações</button>
+-                    </div>
++                        <button type="submit" disabled={isPending || !title.trim()} className="flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50">{isPending && <Loader2 className="size-4 animate-spin" />}Salvar alterações</button>
++                    </DialogFooter>
+                 </form>
+-            </div>
+-        </div>
++            </DialogContent>
++        </Dialog>
+     );
+ }
+diff --git a/components/dashboard/inbox-task-menu.tsx b/components/dashboard/inbox-task-menu.tsx
+index 7542ad3..4981ee6 100644
+--- a/components/dashboard/inbox-task-menu.tsx
++++ b/components/dashboard/inbox-task-menu.tsx
+@@ -6,6 +6,16 @@ import { useRouter } from "next/navigation";
+ import { toast } from "sonner";
+ import { deleteInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud";
+ import { EditInboxTaskModal } from "@/components/dashboard/edit-inbox-task-modal";
++import {
++    AlertDialog,
++    AlertDialogContent,
++    AlertDialogHeader,
++    AlertDialogTitle,
++    AlertDialogDescription,
++    AlertDialogFooter,
++    AlertDialogCancel,
++    AlertDialogAction,
++} from "@/components/ui/alert-dialog";
+ 
+ interface TagOption { id: string; name: string; color: string; }
+ interface Props {
+@@ -49,18 +59,26 @@ export function InboxTaskMenu({ task, availableTags }: Props) {
+ 
+             <EditInboxTaskModal open={editOpen} onClose={() => setEditOpen(false)} task={task} availableTags={availableTags} />
+ 
+-            {deleteOpen && (
+-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+-                    <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+-                        <h2 className="text-lg font-semibold text-slate-900">Excluir tarefa?</h2>
+-                        <p className="mt-2 text-sm leading-6 text-slate-500">A tarefa <strong>{task.title}</strong> será excluída.</p>
+-                        <div className="mt-6 flex justify-end gap-3">
+-                            <button type="button" onClick={() => setDeleteOpen(false)} disabled={isPending} className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancelar</button>
+-                            <button type="button" onClick={handleDelete} disabled={isPending} className="flex h-10 items-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50">{isPending && <Loader2 className="size-4 animate-spin" />}Excluir</button>
+-                        </div>
+-                    </div>
+-                </div>
+-            )}
++            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
++                <AlertDialogContent className="max-w-sm">
++                    <AlertDialogHeader>
++                        <AlertDialogTitle>Excluir tarefa?</AlertDialogTitle>
++                        <AlertDialogDescription>
++                            A tarefa <strong>{task.title}</strong> será excluída.
++                        </AlertDialogDescription>
++                    </AlertDialogHeader>
++                    <AlertDialogFooter>
++                        <AlertDialogCancel disabled={isPending}>Cancelar</AlertDialogCancel>
++                        <AlertDialogAction
++                            onClick={handleDelete}
++                            disabled={isPending}
++                            className="bg-rose-600 text-white hover:bg-rose-700"
++                        >
++                            {isPending && <Loader2 className="mr-2 size-4 animate-spin" />}Excluir
++                        </AlertDialogAction>
++                    </AlertDialogFooter>
++                </AlertDialogContent>
++            </AlertDialog>
+         </>
+     );
+ }
+diff --git a/components/dashboard/new-inbox-task-button.tsx b/components/dashboard/new-inbox-task-button.tsx
+index 820f998..08c3a71 100644
+--- a/components/dashboard/new-inbox-task-button.tsx
++++ b/components/dashboard/new-inbox-task-button.tsx
+@@ -1,11 +1,19 @@
+ "use client";
+ 
+ import { useMemo, useState, useTransition } from "react";
+-import { Loader2, Plus, X } from "lucide-react";
++import { Loader2, Plus } from "lucide-react";
+ import { useRouter } from "next/navigation";
+ import { toast } from "sonner";
+ 
+ import { createInboxTask } from "@/app/(app)/inbox/_actions/inbox-crud";
++import {
++    Dialog,
++    DialogContent,
++    DialogHeader,
++    DialogTitle,
++    DialogDescription,
++    DialogFooter,
++} from "@/components/ui/dialog";
+ 
+ interface TagOption {
+     id: string;
+@@ -91,179 +99,164 @@ export function NewInboxTaskButton({
+                 Nova captura
+             </button>
+ 
+-            {open && (
+-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+-                    <div className="w-full max-w-xl rounded-2xl bg-white shadow-xl">
+-                        <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
+-                            <div>
+-                                <h2 className="text-xl font-semibold text-slate-900">
+-                                    Nova captura
+-                                </h2>
+-
+-                                <p className="mt-1 text-sm text-slate-500">
+-                                    Capture agora. Organize depois.
+-                                </p>
+-                            </div>
++            <Dialog open={open} onOpenChange={setOpen}>
++                <DialogContent className="max-w-xl">
++                    <DialogHeader>
++                        <DialogTitle>Nova captura</DialogTitle>
++                        <DialogDescription>
++                            Capture agora. Organize depois.
++                        </DialogDescription>
++                    </DialogHeader>
++
++                    <form onSubmit={handleSubmit} className="flex flex-col gap-5">
++                        <div>
++                            <label className="mb-2 block text-sm font-medium text-slate-700">
++                                Tarefa
++                            </label>
++
++                            <input
++                                type="text"
++                                value={title}
++                                onChange={(event) => setTitle(event.target.value)}
++                                placeholder="O que você quer lembrar?"
++                                autoFocus
++                                className="h-11 w-full rounded-xl border border-slate-200 px-3 text-base outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm"
++                            />
++                        </div>
+ 
+-                            <button
+-                                type="button"
+-                                onClick={() => setOpen(false)}
+-                                className="flex size-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+-                            >
+-                                <X className="size-5" />
+-                            </button>
++                        <div>
++                            <label className="mb-2 block text-sm font-medium text-slate-700">
++                                Descrição
++                                <span className="ml-1 font-normal text-slate-400">
++                                    opcional
++                                </span>
++                            </label>
++
++                            <textarea
++                                value={description}
++                                onChange={(event) => setDescription(event.target.value)}
++                                placeholder="Adicione algum detalhe..."
++                                rows={3}
++                                className="w-full resize-none rounded-xl border border-slate-200 px-3 py-3 text-base outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm"
++                            />
+                         </div>
+ 
+-                        <form onSubmit={handleSubmit} className="space-y-5 p-6">
++                        <div className="grid gap-4 sm:grid-cols-2">
+                             <div>
+                                 <label className="mb-2 block text-sm font-medium text-slate-700">
+-                                    Tarefa
++                                    Prioridade
+                                 </label>
+ 
+-                                <input
+-                                    type="text"
+-                                    value={title}
+-                                    onChange={(event) => setTitle(event.target.value)}
+-                                    placeholder="O que você quer lembrar?"
+-                                    autoFocus
+-                                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+-                                />
++                                <select
++                                    value={priority}
++                                    onChange={(event) =>
++                                        setPriority(
++                                            event.target.value as "LOW" | "MEDIUM" | "HIGH"
++                                        )
++                                    }
++                                    className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm"
++                                >
++                                    <option value="LOW">Baixa</option>
++                                    <option value="MEDIUM">Média</option>
++                                    <option value="HIGH">Alta</option>
++                                </select>
+                             </div>
+ 
+                             <div>
+                                 <label className="mb-2 block text-sm font-medium text-slate-700">
+-                                    Descrição
++                                    Data
+                                     <span className="ml-1 font-normal text-slate-400">
+                                         opcional
+                                     </span>
+                                 </label>
+ 
+-                                <textarea
+-                                    value={description}
+-                                    onChange={(event) => setDescription(event.target.value)}
+-                                    placeholder="Adicione algum detalhe..."
+-                                    rows={3}
+-                                    className="w-full resize-none rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
++                                <input
++                                    type="date"
++                                    value={plannedDate}
++                                    onChange={(event) => setPlannedDate(event.target.value)}
++                                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-base text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm"
+                                 />
+                             </div>
++                        </div>
+ 
+-                            <div className="grid gap-4 sm:grid-cols-2">
+-                                <div>
+-                                    <label className="mb-2 block text-sm font-medium text-slate-700">
+-                                        Prioridade
+-                                    </label>
+-
+-                                    <select
+-                                        value={priority}
+-                                        onChange={(event) =>
+-                                            setPriority(
+-                                                event.target.value as "LOW" | "MEDIUM" | "HIGH"
+-                                            )
+-                                        }
+-                                        className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+-                                    >
+-                                        <option value="LOW">Baixa</option>
+-                                        <option value="MEDIUM">Média</option>
+-                                        <option value="HIGH">Alta</option>
+-                                    </select>
+-                                </div>
+-
+-                                <div>
+-                                    <label className="mb-2 block text-sm font-medium text-slate-700">
+-                                        Data
+-                                        <span className="ml-1 font-normal text-slate-400">
+-                                            opcional
+-                                        </span>
+-                                    </label>
++                        <div>
++                            <div className="mb-3 flex items-center justify-between">
++                                <label className="text-sm font-medium text-slate-700">
++                                    Tags
++                                </label>
+ 
+-                                    <input
+-                                        type="date"
+-                                        value={plannedDate}
+-                                        onChange={(event) => setPlannedDate(event.target.value)}
+-                                        className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+-                                    />
+-                                </div>
++                                <span className="text-xs text-slate-400">
++                                    {selectedTagIds.length} selecionada(s)
++                                </span>
+                             </div>
+ 
+-                            <div>
+-                                <div className="mb-3 flex items-center justify-between">
+-                                    <label className="text-sm font-medium text-slate-700">
+-                                        Tags
+-                                    </label>
++                            {tags.length > 0 ? (
++                                <div className="flex flex-wrap gap-2">
++                                    {tags.map((item) => {
++                                        const selected = selectedTagIds.includes(item.id);
+ 
+-                                    <span className="text-xs text-slate-400">
+-                                        {selectedTagIds.length} selecionada(s)
+-                                    </span>
+-                                </div>
+-
+-                                {tags.length > 0 ? (
+-                                    <div className="flex flex-wrap gap-2">
+-                                        {tags.map((item) => {
+-                                            const selected = selectedTagIds.includes(item.id);
+-
+-                                            return (
+-                                                <button
+-                                                    key={item.id}
+-                                                    type="button"
+-                                                    onClick={() => toggleTag(item.id)}
+-                                                    className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${selected
+-                                                            ? "border-slate-900 bg-slate-900 text-white"
+-                                                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
+-                                                        }`}
+-                                                >
+-                                                    <span
+-                                                        className="size-2.5 rounded-full"
+-                                                        style={{ backgroundColor: item.color }}
+-                                                    />
+-                                                    {item.name}
+-                                                </button>
+-                                            );
+-                                        })}
+-                                    </div>
+-                                ) : (
+-                                    <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-400">
+-                                        Você ainda não criou tags.
+-                                    </div>
+-                                )}
+-
+-                                {selectedTags.length > 0 && (
+-                                    <div className="mt-3 flex flex-wrap gap-2">
+-                                        {selectedTags.map((item) => (
+-                                            <span
++                                        return (
++                                            <button
+                                                 key={item.id}
+-                                                className="rounded-md px-2.5 py-1 text-xs font-medium text-white"
+-                                                style={{ backgroundColor: item.color }}
++                                                type="button"
++                                                onClick={() => toggleTag(item.id)}
++                                                className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${selected
++                                                        ? "border-slate-900 bg-slate-900 text-white"
++                                                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"
++                                                    }`}
+                                             >
++                                                <span
++                                                    className="size-2.5 rounded-full"
++                                                    style={{ backgroundColor: item.color }}
++                                                />
+                                                 {item.name}
+-                                            </span>
+-                                        ))}
+-                                    </div>
+-                                )}
+-                            </div>
++                                            </button>
++                                        );
++                                    })}
++                                </div>
++                            ) : (
++                                <div className="rounded-xl border border-dashed border-slate-200 p-4 text-sm text-slate-400">
++                                    Você ainda não criou tags.
++                                </div>
++                            )}
++
++                            {selectedTags.length > 0 && (
++                                <div className="mt-3 flex flex-wrap gap-2">
++                                    {selectedTags.map((item) => (
++                                        <span
++                                            key={item.id}
++                                            className="rounded-md px-2.5 py-1 text-xs font-medium text-white"
++                                            style={{ backgroundColor: item.color }}
++                                        >
++                                            {item.name}
++                                        </span>
++                                    ))}
++                                </div>
++                            )}
++                        </div>
+ 
+-                            <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
+-                                <button
+-                                    type="button"
+-                                    onClick={() => setOpen(false)}
+-                                    disabled={isPending}
+-                                    className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+-                                >
+-                                    Cancelar
+-                                </button>
++                        <DialogFooter>
++                            <button
++                                type="button"
++                                onClick={() => setOpen(false)}
++                                disabled={isPending}
++                                className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
++                            >
++                                Cancelar
++                            </button>
+ 
+-                                <button
+-                                    type="submit"
+-                                    disabled={isPending || !title.trim()}
+-                                    className="flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+-                                >
+-                                    {isPending && <Loader2 className="size-4 animate-spin" />}
+-                                    Salvar captura
+-                                </button>
+-                            </div>
+-                        </form>
+-                    </div>
+-                </div>
+-            )}
++                            <button
++                                type="submit"
++                                disabled={isPending || !title.trim()}
++                                className="flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
++                            >
++                                {isPending && <Loader2 className="size-4 animate-spin" />}
++                                Salvar captura
++                            </button>
++                        </DialogFooter>
++                    </form>
++                </DialogContent>
++            </Dialog>
+         </>
+     );
+ }
+diff --git a/components/dashboard/new-tag-button.tsx b/components/dashboard/new-tag-button.tsx
+index 31ca97f..d423de1 100644
+--- a/components/dashboard/new-tag-button.tsx
++++ b/components/dashboard/new-tag-button.tsx
+@@ -6,6 +6,14 @@ import { useRouter } from "next/navigation";
+ import { toast } from "sonner";
+ 
+ import { createTag } from "@/app/(app)/tags/actions";
++import {
++    Dialog,
++    DialogContent,
++    DialogHeader,
++    DialogTitle,
++    DialogDescription,
++    DialogFooter,
++} from "@/components/ui/dialog";
+ 
+ const COLORS = [
+     "#2563eb",
+@@ -63,80 +71,78 @@ export function NewTagButton() {
+                 Nova tag
+             </button>
+ 
+-            {open && (
+-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+-                    <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+-                        <div className="mb-5">
+-                            <h2 className="text-xl font-semibold text-slate-900">
+-                                Criar nova tag
+-                            </h2>
+-
+-                            <p className="mt-1 text-sm text-slate-500">
+-                                Defina um nome e uma cor para identificar suas tarefas.
+-                            </p>
++            <Dialog open={open} onOpenChange={setOpen}>
++                <DialogContent className="max-w-md">
++                    <DialogHeader>
++                        <DialogTitle>Criar nova tag</DialogTitle>
++                        <DialogDescription>
++                            Defina um nome e uma cor para identificar suas tarefas.
++                        </DialogDescription>
++                    </DialogHeader>
++
++                    <form
++                        onSubmit={handleSubmit}
++                        className="flex flex-col gap-5"
++                    >
++                        <div>
++                            <label className="mb-2 block text-sm font-medium text-slate-700">
++                                Nome
++                            </label>
++
++                            <input
++                                type="text"
++                                value={name}
++                                onChange={(event) => setName(event.target.value)}
++                                placeholder="Ex.: Estudos"
++                                autoFocus
++                                className="h-11 w-full rounded-xl border border-slate-200 px-3 text-base outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm"
++                            />
+                         </div>
+ 
+-                        <form onSubmit={handleSubmit} className="space-y-5">
+-                            <div>
+-                                <label className="mb-2 block text-sm font-medium text-slate-700">
+-                                    Nome
+-                                </label>
+-
+-                                <input
+-                                    type="text"
+-                                    value={name}
+-                                    onChange={(event) => setName(event.target.value)}
+-                                    placeholder="Ex.: Estudos"
+-                                    autoFocus
+-                                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+-                                />
+-                            </div>
+-
+-                            <div>
+-                                <label className="mb-3 block text-sm font-medium text-slate-700">
+-                                    Cor
+-                                </label>
+-
+-                                <div className="flex flex-wrap gap-3">
+-                                    {COLORS.map((item) => (
+-                                        <button
+-                                            key={item}
+-                                            type="button"
+-                                            onClick={() => setColor(item)}
+-                                            className={`size-9 rounded-full border-4 transition ${color === item
+-                                                ? "border-slate-900"
+-                                                : "border-transparent"
+-                                                }`}
+-                                            style={{ backgroundColor: item }}
+-                                            aria-label={`Selecionar cor ${item}`}
+-                                        />
+-                                    ))}
+-                                </div>
++                        <div>
++                            <label className="mb-3 block text-sm font-medium text-slate-700">
++                                Cor
++                            </label>
++
++                            <div className="flex flex-wrap gap-3">
++                                {COLORS.map((item) => (
++                                    <button
++                                        key={item}
++                                        type="button"
++                                        onClick={() => setColor(item)}
++                                        className={`size-9 rounded-full border-4 transition ${color === item
++                                            ? "border-slate-900"
++                                            : "border-transparent"
++                                            }`}
++                                        style={{ backgroundColor: item }}
++                                        aria-label={`Selecionar cor ${item}`}
++                                    />
++                                ))}
+                             </div>
++                        </div>
+ 
+-                            <div className="flex justify-end gap-3 pt-2">
+-                                <button
+-                                    type="button"
+-                                    onClick={() => setOpen(false)}
+-                                    disabled={isPending}
+-                                    className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+-                                >
+-                                    Cancelar
+-                                </button>
+-
+-                                <button
+-                                    type="submit"
+-                                    disabled={isPending || !name.trim()}
+-                                    className="flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+-                                >
+-                                    {isPending && <Loader2 className="size-4 animate-spin" />}
+-                                    Criar tag
+-                                </button>
+-                            </div>
+-                        </form>
+-                    </div>
+-                </div>
+-            )}
++                        <DialogFooter>
++                            <button
++                                type="button"
++                                onClick={() => setOpen(false)}
++                                disabled={isPending}
++                                className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
++                            >
++                                Cancelar
++                            </button>
++
++                            <button
++                                type="submit"
++                                disabled={isPending || !name.trim()}
++                                className="flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
++                            >
++                                {isPending && <Loader2 className="size-4 animate-spin" />}
++                                Criar tag
++                            </button>
++                        </DialogFooter>
++                    </form>
++                </DialogContent>
++            </Dialog>
+         </>
+     );
+ }
+diff --git a/components/dashboard/tag-actions.tsx b/components/dashboard/tag-actions.tsx
+index 8c14756..ade4e0e 100644
+--- a/components/dashboard/tag-actions.tsx
++++ b/components/dashboard/tag-actions.tsx
+@@ -1,7 +1,7 @@
+ "use client";
+ 
+ import { useState, useTransition } from "react";
+-import { Loader2, Pencil, Trash2, X } from "lucide-react";
++import { Loader2, Pencil, Trash2 } from "lucide-react";
+ import { useRouter } from "next/navigation";
+ import { toast } from "sonner";
+ 
+@@ -9,6 +9,24 @@ import {
+     deleteTag,
+     updateTag,
+ } from "@/app/(app)/tags/actions";
++import {
++    Dialog,
++    DialogContent,
++    DialogHeader,
++    DialogTitle,
++    DialogDescription,
++    DialogFooter,
++} from "@/components/ui/dialog";
++import {
++    AlertDialog,
++    AlertDialogContent,
++    AlertDialogHeader,
++    AlertDialogTitle,
++    AlertDialogDescription,
++    AlertDialogFooter,
++    AlertDialogCancel,
++    AlertDialogAction,
++} from "@/components/ui/alert-dialog";
+ 
+ const COLORS = [
+     "#2563eb",
+@@ -104,121 +122,67 @@ export function TagActions({
+             </div>
+ 
+             {/* EDITAR */}
+-            {editOpen && (
+-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+-                    <div className="w-full max-w-md rounded-2xl bg-white shadow-xl">
+-                        <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
+-                            <div>
+-                                <h2 className="text-xl font-semibold text-slate-900">
+-                                    Editar tag
+-                                </h2>
+-
+-                                <p className="mt-1 text-sm text-slate-500">
+-                                    Altere o nome ou a cor da tag.
+-                                </p>
+-                            </div>
+-
+-                            <button
+-                                type="button"
+-                                onClick={() => setEditOpen(false)}
+-                                className="flex size-9 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100"
+-                            >
+-                                <X className="size-5" />
+-                            </button>
++            <Dialog
++                open={editOpen}
++                onOpenChange={(open) => {
++                    setEditOpen(open);
++                    if (!open) {
++                        setTagName(name);
++                        setTagColor(color);
++                    }
++                }}
++            >
++                <DialogContent className="max-w-md">
++                    <DialogHeader>
++                        <DialogTitle>Editar tag</DialogTitle>
++                        <DialogDescription>
++                            Altere o nome ou a cor da tag.
++                        </DialogDescription>
++                    </DialogHeader>
++
++                    <form onSubmit={handleUpdate} className="flex flex-col gap-5">
++                        <div>
++                            <label className="mb-2 block text-sm font-medium text-slate-700">
++                                Nome
++                            </label>
++
++                            <input
++                                type="text"
++                                value={tagName}
++                                onChange={(event) => setTagName(event.target.value)}
++                                className="h-11 w-full rounded-xl border border-slate-200 px-3 text-base outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm"
++                            />
+                         </div>
+ 
+-                        <form onSubmit={handleUpdate} className="space-y-5 p-6">
+-                            <div>
+-                                <label className="mb-2 block text-sm font-medium text-slate-700">
+-                                    Nome
+-                                </label>
+-
+-                                <input
+-                                    type="text"
+-                                    value={tagName}
+-                                    onChange={(event) => setTagName(event.target.value)}
+-                                    className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+-                                />
+-                            </div>
+-
+-                            <div>
+-                                <label className="mb-3 block text-sm font-medium text-slate-700">
+-                                    Cor
+-                                </label>
+-
+-                                <div className="flex flex-wrap gap-3">
+-                                    {COLORS.map((item) => (
+-                                        <button
+-                                            key={item}
+-                                            type="button"
+-                                            onClick={() => setTagColor(item)}
+-                                            className={`size-9 rounded-full border-4 transition ${tagColor === item
+-                                                ? "border-slate-900"
+-                                                : "border-transparent"
+-                                                }`}
+-                                            style={{ backgroundColor: item }}
+-                                        />
+-                                    ))}
+-                                </div>
++                        <div>
++                            <label className="mb-3 block text-sm font-medium text-slate-700">
++                                Cor
++                            </label>
++
++                            <div className="flex flex-wrap gap-3">
++                                {COLORS.map((item) => (
++                                    <button
++                                        key={item}
++                                        type="button"
++                                        onClick={() => setTagColor(item)}
++                                        className={`size-9 rounded-full border-4 transition ${tagColor === item
++                                            ? "border-slate-900"
++                                            : "border-transparent"
++                                            }`}
++                                        style={{ backgroundColor: item }}
++                                    />
++                                ))}
+                             </div>
+-
+-                            <div className="flex justify-end gap-3 border-t border-slate-100 pt-5">
+-                                <button
+-                                    type="button"
+-                                    onClick={() => {
+-                                        setTagName(name);
+-                                        setTagColor(color);
+-                                        setEditOpen(false);
+-                                    }}
+-                                    disabled={isPending}
+-                                    className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+-                                >
+-                                    Cancelar
+-                                </button>
+-
+-                                <button
+-                                    type="submit"
+-                                    disabled={isPending || !tagName.trim()}
+-                                    className="flex h-10 items-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+-                                >
+-                                    {isPending && <Loader2 className="size-4 animate-spin" />}
+-                                    Salvar
+-                                </button>
+-                            </div>
+-                        </form>
+-                    </div>
+-                </div>
+-            )}
+-
+-            {/* EXCLUIR */}
+-            {deleteOpen && (
+-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+-                    <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl">
+-                        <div className="flex items-start justify-between gap-4">
+-                            <div>
+-                                <h2 className="text-lg font-semibold text-slate-900">
+-                                    Excluir tag?
+-                                </h2>
+-
+-                                <p className="mt-2 text-sm leading-6 text-slate-500">
+-                                    A tag <strong>{name}</strong> será removida. As tarefas
+-                                    continuarão existindo.
+-                                </p>
+-                            </div>
+-
+-                            <button
+-                                type="button"
+-                                onClick={() => setDeleteOpen(false)}
+-                                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100"
+-                            >
+-                                <X className="size-4" />
+-                            </button>
+                         </div>
+ 
+-                        <div className="mt-6 flex justify-end gap-3">
++                        <DialogFooter>
+                             <button
+                                 type="button"
+-                                onClick={() => setDeleteOpen(false)}
++                                onClick={() => {
++                                    setTagName(name);
++                                    setTagColor(color);
++                                    setEditOpen(false);
++                                }}
+                                 disabled={isPending}
+                                 className="h-10 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+                             >
+@@ -226,18 +190,47 @@ export function TagActions({
+                             </button>
+ 
+                             <button
+-                                type="button"
+-                                onClick={handleDelete}
+-                                disabled={isPending}
+-                                className="flex h-10 items-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white transition hover:bg-rose-700 disabled:opacity-50"
++                                type="submit"
++                                disabled={isPending || !tagName.trim()}
++                                className="flex h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:opacity-50"
+                             >
+                                 {isPending && <Loader2 className="size-4 animate-spin" />}
+-                                Excluir tag
++                                Salvar
+                             </button>
+-                        </div>
+-                    </div>
+-                </div>
+-            )}
++                        </DialogFooter>
++                    </form>
++                </DialogContent>
++            </Dialog>
++
++            {/* EXCLUIR */}
++            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
++                <AlertDialogContent className="max-w-sm">
++                    <AlertDialogHeader>
++                        <AlertDialogTitle>Excluir tag?</AlertDialogTitle>
++                        <AlertDialogDescription>
++                            A tag <strong>{name}</strong> será removida. As tarefas
++                            continuarão existindo.
++                        </AlertDialogDescription>
++                    </AlertDialogHeader>
++
++                    <AlertDialogFooter>
++                        <AlertDialogCancel disabled={isPending}>
++                            Cancelar
++                        </AlertDialogCancel>
++
++                        <AlertDialogAction
++                            onClick={handleDelete}
++                            disabled={isPending}
++                            className="bg-rose-600 text-white hover:bg-rose-700"
++                        >
++                            {isPending && (
++                                <Loader2 className="mr-2 size-4 animate-spin" />
++                            )}
++                            Excluir tag
++                        </AlertDialogAction>
++                    </AlertDialogFooter>
++                </AlertDialogContent>
++            </AlertDialog>
+         </>
+     );
+ }
+diff --git a/components/ui/alert-dialog.tsx b/components/ui/alert-dialog.tsx
+index 25e7b47..5c4802d 100644
+--- a/components/ui/alert-dialog.tsx
++++ b/components/ui/alert-dialog.tsx
+@@ -36,7 +36,7 @@ const AlertDialogContent = React.forwardRef<
+     <AlertDialogPrimitive.Content
+       ref={ref}
+       className={cn(
+-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
++        "fixed left-[50%] top-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
+         className
+       )}
+       {...props}
+@@ -51,7 +51,7 @@ const AlertDialogHeader = ({
+ }: React.HTMLAttributes<HTMLDivElement>) => (
+   <div
+     className={cn(
+-      "flex flex-col space-y-2 text-center sm:text-left",
++      "sticky -top-6 z-10 flex flex-col space-y-2 bg-background pb-2 pt-1 text-center sm:text-left",
+       className
+     )}
+     {...props}
+@@ -65,7 +65,7 @@ const AlertDialogFooter = ({
+ }: React.HTMLAttributes<HTMLDivElement>) => (
+   <div
+     className={cn(
+-      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
++      "sticky -bottom-6 z-10 flex flex-col-reverse gap-2 border-t bg-background pb-1 pt-4 sm:flex-row sm:justify-end sm:space-x-2 sm:gap-0",
+       className
+     )}
+     {...props}
+diff --git a/components/ui/dialog.tsx b/components/ui/dialog.tsx
+index f38593b..994cecd 100644
+--- a/components/ui/dialog.tsx
++++ b/components/ui/dialog.tsx
+@@ -38,13 +38,13 @@ const DialogContent = React.forwardRef<
+     <DialogPrimitive.Content
+       ref={ref}
+       className={cn(
+-        "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
++        "fixed left-[50%] top-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-[calc(100%-2rem)] max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg",
+         className
+       )}
+       {...props}
+     >
+       {children}
+-      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
++      <DialogPrimitive.Close className="absolute right-4 top-4 rounded-sm bg-background opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+         <X className="h-4 w-4" />
+         <span className="sr-only">Close</span>
+       </DialogPrimitive.Close>
+@@ -59,7 +59,7 @@ const DialogHeader = ({
+ }: React.HTMLAttributes<HTMLDivElement>) => (
+   <div
+     className={cn(
+-      "flex flex-col space-y-1.5 text-center sm:text-left",
++      "sticky -top-6 z-10 flex flex-col space-y-1.5 bg-background pb-2 pt-1 text-center sm:text-left",
+       className
+     )}
+     {...props}
+@@ -73,7 +73,7 @@ const DialogFooter = ({
+ }: React.HTMLAttributes<HTMLDivElement>) => (
+   <div
+     className={cn(
+-      "flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2",
++      "sticky -bottom-6 z-10 flex flex-col-reverse gap-2 border-t bg-background pb-1 pt-4 sm:flex-row sm:justify-end sm:space-x-2 sm:gap-0",
+       className
+     )}
+     {...props}
+diff --git a/components/ui/sheet.tsx b/components/ui/sheet.tsx
+index 1ddc0bb..c9c2b4b 100644
+--- a/components/ui/sheet.tsx
++++ b/components/ui/sheet.tsx
+@@ -80,7 +80,7 @@ const SheetHeader = ({
+ }: React.HTMLAttributes<HTMLDivElement>) => (
+   <div
+     className={cn(
+-      "flex flex-col gap-1.5 border-b border-slate-100 px-5 py-4",
++      "flex shrink-0 flex-col gap-1.5 border-b border-slate-100 px-5 py-4",
+       className
+     )}
+     {...props}
+@@ -88,6 +88,26 @@ const SheetHeader = ({
+ )
+ SheetHeader.displayName = "SheetHeader"
+ 
++/**
++ * Opcional — nem todo Sheet precisa de footer (o painel de detalhes
++ * do card, por exemplo, é autosave e não tem). Use quando o
++ * conteúdo for um formulário com botões de ação (Salvar/Cancelar/
++ * Avançar): eles ficam sempre visíveis, mesmo com teclado aberto.
++ */
++const SheetFooter = ({
++  className,
++  ...props
++}: React.HTMLAttributes<HTMLDivElement>) => (
++  <div
++    className={cn(
++      "flex shrink-0 flex-col-reverse gap-2 border-t border-slate-100 bg-white px-5 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-4 sm:flex-row sm:justify-end",
++      className
++    )}
++    {...props}
++  />
++)
++SheetFooter.displayName = "SheetFooter"
++
+ const SheetTitle = React.forwardRef<
+   React.ElementRef<typeof SheetPrimitive.Title>,
+   React.ComponentPropsWithoutRef<typeof SheetPrimitive.Title>
+@@ -123,6 +143,7 @@ export {
+   SheetClose,
+   SheetContent,
+   SheetHeader,
++  SheetFooter,
+   SheetTitle,
+   SheetDescription,
+ }

@@ -6,8 +6,10 @@ import {
     pgTable,
     text,
     timestamp,
+    uniqueIndex,
 } from 'drizzle-orm/pg-core'
 import { boardColumn } from './column'
+import { projectRequirement } from './project-requirement'
 
 export const card = pgTable(
     'card',
@@ -20,6 +22,10 @@ export const card = pgTable(
             .references(() => boardColumn.id, { onDelete: 'cascade' }),
         name: text('name').notNull(),
         description: text('description'),
+        requirementId: text('requirement_id').references(
+            () => projectRequirement.id,
+            { onDelete: 'cascade' }
+        ),
         dueDate: date('due_date', {
             mode: 'date',
         }),
@@ -30,7 +36,10 @@ export const card = pgTable(
             .$onUpdate(() => new Date())
             .notNull(),
     },
-    (t) => [index('card_column_id_idx').on(t.columnId)]
+    (t) => [
+        index('card_column_id_idx').on(t.columnId),
+        uniqueIndex('card_requirement_id_unique').on(t.requirementId),
+    ]
 )
 
 export const cardRelations = relations(card, ({ one }) => ({

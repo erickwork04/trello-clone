@@ -1,0 +1,1780 @@
+diff --git a/app/(app)/inbox/page.tsx b/app/(app)/inbox/page.tsx
+index ab1411b..f726b8b 100644
+--- a/app/(app)/inbox/page.tsx
++++ b/app/(app)/inbox/page.tsx
+@@ -4,14 +4,11 @@ import { and, asc, eq, inArray } from "drizzle-orm";
+ import {
+     AlertCircle,
+     Inbox,
+-    Search,
+-    SlidersHorizontal,
+     Tag,
+ } from "lucide-react";
+ 
+ import { InboxStatCard } from "@/components/dashboard/inbox-stat-card";
+-import { NewInboxTaskButton } from "@/components/dashboard/new-inbox-task-button";
+-import { InboxBoard } from "@/components/dashboard/inbox-board";
++import { InboxView } from "@/components/dashboard/inbox-view";
+ import { db } from "@/db";
+ import { tag } from "@/db/schema/tag";
+ import { task } from "@/db/schema/task";
+@@ -159,57 +156,8 @@ export default async function InboxPage() {
+                     </div>
+                 </div>
+ 
+-                {/* TOOLBAR */}
+-                <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
+-                    <div className="flex rounded-xl border border-slate-200 bg-white p-1">
+-                        <button
+-                            type="button"
+-                            className="rounded-lg bg-blue-50 px-5 py-2 text-sm font-medium text-blue-600"
+-                        >
+-                            Quadro
+-                        </button>
+-
+-                        <button
+-                            type="button"
+-                            className="px-5 py-2 text-sm text-slate-600 transition hover:text-slate-900"
+-                        >
+-                            Lista
+-                        </button>
+-
+-                        <button
+-                            type="button"
+-                            className="px-5 py-2 text-sm text-slate-600 transition hover:text-slate-900"
+-                        >
+-                            Calendário
+-                        </button>
+-                    </div>
+-
+-                    <div className="flex flex-1 flex-wrap justify-end gap-3">
+-                        <div className="flex h-11 w-full max-w-[320px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-4">
+-                            <Search className="size-4 shrink-0 text-slate-400" />
+-
+-                            <input
+-                                type="text"
+-                                placeholder="Buscar na caixa de entrada..."
+-                                className="h-full w-full bg-transparent text-sm text-slate-700 outline-none placeholder:text-slate-400"
+-                            />
+-                        </div>
+-
+-                        <button
+-                            type="button"
+-                            className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+-                        >
+-                            <SlidersHorizontal className="size-4" />
+-                            Filtros
+-                        </button>
+-
+-                        <NewInboxTaskButton tags={userTags} />
+-                    </div>
+-                </div>
+-
+-                {/* BOARD */}
+-
+-                <InboxBoard
++                {/* TOOLBAR + VIEWS + BUSCA + FILTROS */}
++                <InboxView
+                     tasks={inboxTasks.map((item) => ({
+                         ...item,
+                         tags: tagsByTask.get(item.id) ?? [],
+diff --git a/components/board/board-calendar.tsx b/components/board/board-calendar.tsx
+new file mode 100644
+index 0000000..fd25f74
+--- /dev/null
++++ b/components/board/board-calendar.tsx
+@@ -0,0 +1,218 @@
++'use client'
++
++import { useMemo, useState } from 'react'
++import { ChevronLeft, ChevronRight, ListChecks } from 'lucide-react'
++
++import { BoardCard } from './use-board-dnd'
++
++interface BoardCalendarProps {
++    cards: Array<BoardCard & { columnTitle: string }>
++    onOpenCard: (cardId: string) => void
++}
++
++function dateKey(date: Date) {
++    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
++        date.getDate()
++    ).padStart(2, '0')}`
++}
++
++function startOfMonth(date: Date) {
++    return new Date(date.getFullYear(), date.getMonth(), 1)
++}
++
++const WEEKDAY_LABELS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
++
++export function BoardCalendar({ cards, onOpenCard }: BoardCalendarProps) {
++    const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()))
++    const [selectedDay, setSelectedDay] = useState<string | null>(() =>
++        dateKey(new Date())
++    )
++
++    const cardsByDay = useMemo(() => {
++        const map = new Map<string, Array<BoardCard & { columnTitle: string }>>()
++
++        for (const card of cards) {
++            if (!card.dueDate) continue
++            const key = dateKey(new Date(card.dueDate))
++            const current = map.get(key) ?? []
++            current.push(card)
++            map.set(key, current)
++        }
++
++        return map
++    }, [cards])
++
++    const gridDays = useMemo(() => {
++        const first = monthCursor
++        const firstWeekday = first.getDay()
++        const daysInMonth = new Date(
++            first.getFullYear(),
++            first.getMonth() + 1,
++            0
++        ).getDate()
++
++        const days: Array<{ date: Date; inCurrentMonth: boolean }> = []
++
++        for (let i = 0; i < firstWeekday; i++) {
++            const date = new Date(first)
++            date.setDate(date.getDate() - (firstWeekday - i))
++            days.push({ date, inCurrentMonth: false })
++        }
++
++        for (let day = 1; day <= daysInMonth; day++) {
++            days.push({
++                date: new Date(first.getFullYear(), first.getMonth(), day),
++                inCurrentMonth: true,
++            })
++        }
++
++        while (days.length % 7 !== 0) {
++            const last = days[days.length - 1].date
++            const date = new Date(last)
++            date.setDate(date.getDate() + 1)
++            days.push({ date, inCurrentMonth: false })
++        }
++
++        return days
++    }, [monthCursor])
++
++    const todayKey = dateKey(new Date())
++    const selectedCards = selectedDay ? cardsByDay.get(selectedDay) ?? [] : []
++
++    return (
++        <div className="flex h-full min-h-0 flex-col overflow-y-auto p-4 sm:p-6">
++            <div className="mx-auto w-full max-w-2xl">
++                {/* CABEÇALHO DO MÊS */}
++                <div className="mb-4 flex items-center justify-between">
++                    <button
++                        type="button"
++                        onClick={() =>
++                            setMonthCursor(
++                                (m) => new Date(m.getFullYear(), m.getMonth() - 1, 1)
++                            )
++                        }
++                        className="flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
++                        aria-label="Mês anterior"
++                    >
++                        <ChevronLeft className="size-4" />
++                    </button>
++
++                    <p className="text-sm font-semibold capitalize text-slate-900">
++                        {monthCursor.toLocaleDateString('pt-BR', {
++                            month: 'long',
++                            year: 'numeric',
++                        })}
++                    </p>
++
++                    <button
++                        type="button"
++                        onClick={() =>
++                            setMonthCursor(
++                                (m) => new Date(m.getFullYear(), m.getMonth() + 1, 1)
++                            )
++                        }
++                        className="flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
++                        aria-label="Próximo mês"
++                    >
++                        <ChevronRight className="size-4" />
++                    </button>
++                </div>
++
++                {/* GRID DO CALENDÁRIO */}
++                <div className="grid grid-cols-7 gap-1 text-center">
++                    {WEEKDAY_LABELS.map((label, i) => (
++                        <div
++                            key={i}
++                            className="py-1 text-[11px] font-medium text-slate-400"
++                        >
++                            {label}
++                        </div>
++                    ))}
++
++                    {gridDays.map(({ date, inCurrentMonth }) => {
++                        const key = dateKey(date)
++                        const count = cardsByDay.get(key)?.length ?? 0
++                        const isSelected = key === selectedDay
++                        const isToday = key === todayKey
++
++                        return (
++                            <button
++                                key={key}
++                                type="button"
++                                onClick={() => setSelectedDay(key)}
++                                className={`relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm transition ${
++                                    !inCurrentMonth
++                                        ? 'text-slate-300'
++                                        : isSelected
++                                            ? 'bg-blue-600 text-white'
++                                            : isToday
++                                                ? 'bg-blue-50 text-blue-600'
++                                                : 'text-slate-700 hover:bg-slate-100'
++                                }`}
++                            >
++                                {date.getDate()}
++                                {count > 0 && (
++                                    <span
++                                        className={`mt-0.5 size-1.5 rounded-full ${
++                                            isSelected ? 'bg-white' : 'bg-blue-500'
++                                        }`}
++                                    />
++                                )}
++                            </button>
++                        )
++                    })}
++                </div>
++
++                {/* TAREFAS DO DIA */}
++                <div className="mt-6">
++                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
++                        {selectedDay
++                            ? new Date(`${selectedDay}T00:00:00`).toLocaleDateString(
++                                'pt-BR',
++                                { day: '2-digit', month: 'long' }
++                            )
++                            : 'Selecione um dia'}
++                    </p>
++
++                    {selectedCards.length === 0 ? (
++                        <p className="text-sm text-slate-400">
++                            Nenhum card com prazo neste dia.
++                        </p>
++                    ) : (
++                        <div className="space-y-2">
++                            {selectedCards.map((card) => (
++                                <button
++                                    key={card.id}
++                                    type="button"
++                                    onClick={() => onOpenCard(card.id)}
++                                    className="flex w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-blue-200 hover:shadow-md"
++                                >
++                                    <div className="min-w-0">
++                                        <p className="truncate text-sm font-medium text-slate-900">
++                                            {card.name}
++                                        </p>
++                                        <p className="text-xs text-slate-400">
++                                            {card.columnTitle}
++                                        </p>
++                                    </div>
++
++                                    {card.checklistItems.length > 0 && (
++                                        <span className="flex shrink-0 items-center gap-1 text-xs text-slate-400">
++                                            <ListChecks className="size-3.5" />
++                                            {
++                                                card.checklistItems.filter(
++                                                    (i) => i.completed
++                                                ).length
++                                            }
++                                            /{card.checklistItems.length}
++                                        </span>
++                                    )}
++                                </button>
++                            ))}
++                        </div>
++                    )}
++                </div>
++            </div>
++        </div>
++    )
++}
+diff --git a/components/board/board-list.tsx b/components/board/board-list.tsx
+new file mode 100644
+index 0000000..24bee80
+--- /dev/null
++++ b/components/board/board-list.tsx
+@@ -0,0 +1,113 @@
++'use client'
++
++import { CalendarDays, ListChecks } from 'lucide-react'
++
++import { BoardCard, CardTagOption } from './use-board-dnd'
++import { CardMenu } from './card-menu'
++
++interface BoardListProps {
++    cards: Array<BoardCard & { columnTitle: string }>
++    allColumns: Array<{ id: string; title: string; type: string }>
++    availableTags: CardTagOption[]
++    onOpenCard: (cardId: string) => void
++}
++
++export function BoardList({
++    cards,
++    allColumns,
++    availableTags,
++    onOpenCard,
++}: BoardListProps) {
++    if (cards.length === 0) {
++        return (
++            <div className="flex h-full items-center justify-center p-6">
++                <p className="text-sm text-slate-400">
++                    Nenhum card encontrado.
++                </p>
++            </div>
++        )
++    }
++
++    return (
++        <div className="h-full min-h-0 overflow-y-auto p-4 sm:p-6">
++            <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
++                {cards.map((card) => {
++                    const completedChecklist = card.checklistItems.filter(
++                        (i) => i.completed
++                    ).length
++
++                    return (
++                        <div
++                            key={card.id}
++                            className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm transition hover:border-blue-200 hover:shadow-md"
++                        >
++                            <button
++                                type="button"
++                                onClick={() => onOpenCard(card.id)}
++                                className="min-w-0 flex-1 text-left"
++                            >
++                                <p className="truncate text-sm font-medium text-slate-900">
++                                    {card.name}
++                                </p>
++
++                                <div className="mt-1.5 flex flex-wrap items-center gap-2">
++                                    <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
++                                        {card.columnTitle}
++                                    </span>
++
++                                    {card.tags.map((t) => (
++                                        <span
++                                            key={t.id}
++                                            className="flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
++                                            style={{
++                                                backgroundColor: `${t.color}20`,
++                                                color: t.color,
++                                            }}
++                                        >
++                                            <span
++                                                className="size-1.5 rounded-full"
++                                                style={{
++                                                    backgroundColor: t.color,
++                                                }}
++                                            />
++                                            {t.name}
++                                        </span>
++                                    ))}
++
++                                    {card.dueDate && (
++                                        <span className="flex items-center gap-1 text-[11px] text-slate-400">
++                                            <CalendarDays className="size-3" />
++                                            {new Date(
++                                                card.dueDate
++                                            ).toLocaleDateString('pt-BR', {
++                                                day: '2-digit',
++                                                month: '2-digit',
++                                            })}
++                                        </span>
++                                    )}
++
++                                    {card.checklistItems.length > 0 && (
++                                        <span className="flex items-center gap-1 text-[11px] text-slate-400">
++                                            <ListChecks className="size-3" />
++                                            {completedChecklist}/
++                                            {card.checklistItems.length}
++                                        </span>
++                                    )}
++                                </div>
++                            </button>
++
++                            <CardMenu
++                                card={card}
++                                columns={allColumns}
++                                availableTags={availableTags}
++                                onOpenDetails={() => onOpenCard(card.id)}
++                                onEdit={() => onOpenCard(card.id)}
++                                alwaysVisible
++                            />
++                        </div>
++                    )
++                })}
++            </div>
++        </div>
++    )
++}
+diff --git a/components/board/board-view.tsx b/components/board/board-view.tsx
+index 3f32c58..b13af99 100644
+--- a/components/board/board-view.tsx
++++ b/components/board/board-view.tsx
+@@ -1,6 +1,6 @@
+ 'use client'
+ 
+-import { useEffect, useMemo, useState } from 'react'
++import { Suspense, useEffect, useMemo, useState } from 'react'
+ 
+ import {
+     DndContext,
+@@ -24,6 +24,8 @@ import { Board } from '@/db/schema/board'
+ import { ColumnCard } from './column-card'
+ import { CreateColumnButton } from './create-column-button'
+ import { CardDetailsPanel } from './card-details-panel'
++import { BoardList } from './board-list'
++import { BoardCalendar } from './board-calendar'
+ 
+ import {
+     useBoardDnd,
+@@ -31,6 +33,9 @@ import {
+     CardTagOption,
+ } from './use-board-dnd'
+ 
++import { ViewSwitcher } from '@/components/shared/view-switcher'
++import { useViewMode } from '@/components/shared/use-view-mode'
++
+ interface BoardViewProps {
+     board: Board
+     columns: ColumnWithCards[]
+@@ -39,7 +44,37 @@ interface BoardViewProps {
+     hasPriorityTag: boolean
+ }
+ 
+-export function BoardView({
++/**
++ * `useViewMode` usa `useSearchParams`, que o Next.js exige estar
++ * dentro de uma Suspense boundary (senão a rota inteira perde
++ * prerendering estático). O board em si é sempre dinâmico (dados do
++ * usuário logado), mas mantemos o boundary para seguir a exigência e
++ * não gerar warning de build.
++ */
++export function BoardView(props: BoardViewProps) {
++    return (
++        <Suspense fallback={<BoardViewSkeleton columns={props.columns} />}>
++            <BoardViewInner {...props} />
++        </Suspense>
++    )
++}
++
++function BoardViewSkeleton({ columns }: { columns: ColumnWithCards[] }) {
++    return (
++        <div className="flex h-full min-w-0 flex-col bg-slate-50">
++            <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
++                {columns.map((column) => (
++                    <div
++                        key={column.id}
++                        className="h-112.5 w-72 animate-pulse rounded-xl border border-slate-200 bg-slate-100"
++                    />
++                ))}
++            </div>
++        </div>
++    )
++}
++
++function BoardViewInner({
+     columns: initialColumns,
+     availableTags,
+     priorityCardsCount,
+@@ -70,6 +105,8 @@ export function BoardView({
+     const [search, setSearch] = useState('')
+     const [selectedCardId, setSelectedCardId] = useState<string | null>(null)
+ 
++    const { view, setView, isMobile } = useViewMode()
++
+     const allColumns = useMemo(
+         () => columns.map((c) => ({ id: c.id, title: c.title, type: c.type })),
+         [columns]
+@@ -118,6 +155,20 @@ export function BoardView({
+         }))
+     }, [columns, search])
+ 
++    // Usado pelas views de Lista e Calendário — funcionam sobre os
++    // mesmos dados (já filtrados pela busca), só mudam a forma de
++    // apresentar. Nenhum dado novo é buscado no servidor.
++    const flattenedCards = useMemo(
++        () =>
++            filteredColumns.flatMap((column) =>
++                column.cards.map((card) => ({
++                    ...card,
++                    columnTitle: column.title,
++                }))
++            ),
++        [filteredColumns]
++    )
++
+     const inProgressCards = columns
+         .filter(
+             (column) =>
+@@ -144,7 +195,7 @@ export function BoardView({
+         <div className="flex h-full min-w-0 flex-col bg-slate-50">
+ 
+             {/* TOPO */}
+-            <div className="shrink-0 px-6 pt-5">
++            <div className="shrink-0 px-4 pt-5 sm:px-6">
+ 
+                 <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+ 
+@@ -180,7 +231,7 @@ export function BoardView({
+ 
+                         <div className="hidden max-w-47.5 rounded-xl bg-blue-50 px-4 py-3 text-blue-600 xl:block">
+                             <p className="text-sm italic">
+-                                “Disciplina hoje, resultados amanhã.”
++                                &ldquo;Disciplina hoje, resultados amanhã.&rdquo;
+                             </p>
+                         </div>
+ 
+@@ -227,34 +278,11 @@ export function BoardView({
+                 {/* TOOLBAR */}
+                 <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 lg:flex-row lg:items-center lg:justify-between">
+ 
+-                    <div className="flex rounded-xl border border-slate-200 bg-white p-1">
+-
+-                        <button
+-                            type="button"
+-                            className="rounded-lg bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600"
+-                        >
+-                            Quadro
+-                        </button>
+-
+-                        <button
+-                            type="button"
+-                            className="px-4 py-2 text-sm text-slate-500"
+-                        >
+-                            Lista
+-                        </button>
+-
+-                        <button
+-                            type="button"
+-                            className="px-4 py-2 text-sm text-slate-500"
+-                        >
+-                            Calendário
+-                        </button>
+-
+-                    </div>
++                    <ViewSwitcher view={view} onChange={setView} isMobile={isMobile} />
+ 
+                     <div className="flex flex-wrap gap-3">
+ 
+-                        {/* BUSCA */}
++                        {/* BUSCA — funciona nas 3 views, sobre os mesmos dados já carregados */}
+                         <input
+                             type="text"
+                             value={search}
+@@ -264,7 +292,7 @@ export function BoardView({
+                                 )
+                             }
+                             placeholder="Buscar tarefa..."
+-                            className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
++                            className="h-10 rounded-xl border border-slate-200 bg-white px-4 text-base outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm"
+                         />
+ 
+                     </div>
+@@ -273,91 +301,117 @@ export function BoardView({
+ 
+             </div>
+ 
+-            {/* BOARD */}
+-            <main className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden">
+-
+-                {mounted ? (
+-
+-                    <DndContext
+-                        sensors={sensors}
+-                        collisionDetection={
+-                            closestCorners
+-                        }
+-                        onDragStart={
+-                            handleDragStart
+-                        }
+-                        onDragOver={
+-                            handleDragOver
+-                        }
+-                        onDragEnd={
+-                            handleDragEnd
+-                        }
+-                    >
+-
+-                        <SortableContext
+-                            items={filteredColumns.map(
+-                                (column) =>
+-                                    column.id
+-                            )}
+-                            strategy={
+-                                horizontalListSortingStrategy
+-                            }
+-                        >
++            {/* CONTEÚDO */}
++            <main
++                className={
++                    view === 'board'
++                        ? 'min-h-0 flex-1 overflow-x-auto overflow-y-hidden'
++                        : 'min-h-0 flex-1 overflow-hidden'
++                }
++            >
+ 
+-                            <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
+-
+-                                {filteredColumns.map(
+-                                    (column) => (
+-
+-                                        <ColumnCard
+-                                            key={
+-                                                column.id
+-                                            }
+-                                            column={
+-                                                column
+-                                            }
+-                                            cards={
+-                                                column.cards
+-                                            }
+-                                            allColumns={allColumns}
+-                                            availableTags={availableTags}
+-                                            onOpenCard={setSelectedCardId}
+-                                        />
+-
+-                                    )
+-                                )}
++                {view === 'board' && (
+ 
+-                                <CreateColumnButton />
++                    mounted ? (
+ 
+-                            </div>
+-
+-                        </SortableContext>
++                        <DndContext
++                            sensors={sensors}
++                            collisionDetection={
++                                closestCorners
++                            }
++                            onDragStart={
++                                handleDragStart
++                            }
++                            onDragOver={
++                                handleDragOver
++                            }
++                            onDragEnd={
++                                handleDragEnd
++                            }
++                        >
+ 
+-                    </DndContext>
++                            <SortableContext
++                                items={filteredColumns.map(
++                                    (column) =>
++                                        column.id
++                                )}
++                                strategy={
++                                    horizontalListSortingStrategy
++                                }
++                            >
++
++                                <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
++
++                                    {filteredColumns.map(
++                                        (column) => (
++
++                                            <ColumnCard
++                                                key={
++                                                    column.id
++                                                }
++                                                column={
++                                                    column
++                                                }
++                                                cards={
++                                                    column.cards
++                                                }
++                                                allColumns={allColumns}
++                                                availableTags={availableTags}
++                                                onOpenCard={setSelectedCardId}
++                                            />
++
++                                        )
++                                    )}
++
++                                    <CreateColumnButton />
++
++                                </div>
++
++                            </SortableContext>
++
++                        </DndContext>
++
++                    ) : (
++
++                        /*
++                         * Placeholder enquanto o componente
++                         * ainda não foi montado no navegador.
++                         *
++                         * Isso evita o hydration mismatch.
++                         */
++                        <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
++
++                            {initialColumns.map(
++                                (column) => (
++                                    <div
++                                        key={
++                                            column.id
++                                        }
++                                        className="h-112.5 w-72 animate-pulse rounded-xl border border-slate-200 bg-slate-100"
++                                    />
++                                )
++                            )}
+ 
+-                ) : (
++                        </div>
+ 
+-                    /*
+-                     * Placeholder enquanto o componente
+-                     * ainda não foi montado no navegador.
+-                     *
+-                     * Isso evita o hydration mismatch.
+-                     */
+-                    <div className="flex h-full min-w-max items-start gap-3 p-6 pt-5">
++                    )
+ 
+-                        {initialColumns.map(
+-                            (column) => (
+-                                <div
+-                                    key={
+-                                        column.id
+-                                    }
+-                                    className="h-112.5 w-72 animate-pulse rounded-xl border border-slate-200 bg-slate-100"
+-                                />
+-                            )
+-                        )}
++                )}
+ 
+-                    </div>
++                {view === 'list' && (
++                    <BoardList
++                        cards={flattenedCards}
++                        allColumns={allColumns}
++                        availableTags={availableTags}
++                        onOpenCard={setSelectedCardId}
++                    />
++                )}
+ 
++                {view === 'calendar' && (
++                    <BoardCalendar
++                        cards={flattenedCards}
++                        onOpenCard={setSelectedCardId}
++                    />
+                 )}
+ 
+             </main>
+@@ -374,4 +428,4 @@ export function BoardView({
+ 
+         </div>
+     )
+-}
+\ No newline at end of file
++}
+diff --git a/components/board/card-details-panel.tsx b/components/board/card-details-panel.tsx
+index ab8123f..db5f589 100644
+--- a/components/board/card-details-panel.tsx
++++ b/components/board/card-details-panel.tsx
+@@ -106,12 +106,12 @@ export function CardDetailsPanel({
+ 
+     return (
+         <Sheet open={open} onOpenChange={onOpenChange}>
+-            <SheetContent className="flex flex-col" key={card.id}>
+-                <SheetHeader>
++            <SheetContent key={card.id}>
++                <SheetHeader className="shrink-0">
+                     <TitleField card={card} />
+                 </SheetHeader>
+ 
+-                <div className="flex-1 overflow-y-auto px-5 py-4">
++                <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
+                     <StatusField card={card} columns={columns} />
+                     <TagsField card={card} availableTags={availableTags} />
+                     <DueDateField card={card} />
+@@ -215,7 +215,7 @@ function StatusField({
+             <select
+                 value={card.columnId}
+                 onChange={(e) => handleChange(e.target.value)}
+-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
++                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm"
+             >
+                 {columns.map((column) => (
+                     <option key={column.id} value={column.id}>
+@@ -267,7 +267,7 @@ function TagsField({
+                                 key={t.id}
+                                 type="button"
+                                 onClick={() => handleToggle(t.id)}
+-                                className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
++                                className={`flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-medium transition ${
+                                     active
+                                         ? 'border-slate-900 bg-slate-900 text-white'
+                                         : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+@@ -310,7 +310,7 @@ function DueDateField({ card }: { card: BoardCard }) {
+                 type="date"
+                 defaultValue={initialValue}
+                 onChange={(e) => handleChange(e.target.value)}
+-                className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
++                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-base text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 sm:text-sm"
+             />
+         </FieldRow>
+     )
+@@ -344,7 +344,7 @@ function DescriptionField({ card }: { card: BoardCard }) {
+                 }}
+                 placeholder="Adicione detalhes..."
+                 rows={4}
+-                className="w-full resize-none rounded-xl border border-slate-200 px-3 py-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
++                className="w-full resize-none rounded-xl border border-slate-200 px-3 py-3 text-base outline-none sm:text-sm transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+             />
+         </FieldRow>
+     )
+@@ -462,7 +462,7 @@ function ChecklistField({ card }: { card: BoardCard }) {
+                     }}
+                     placeholder="Novo item..."
+                     disabled={isCreating}
+-                    className="h-9 flex-1 rounded-lg border border-slate-200 px-3 text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
++                    className="h-11 flex-1 rounded-lg border border-slate-200 px-3 text-base sm:h-9 sm:text-sm outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                 />
+                 <button
+                     type="button"
+diff --git a/components/board/card-menu.tsx b/components/board/card-menu.tsx
+index 80bee88..194c029 100644
+--- a/components/board/card-menu.tsx
++++ b/components/board/card-menu.tsx
+@@ -40,6 +40,12 @@ interface CardMenuProps {
+     availableTags: CardTagOption[]
+     onOpenDetails: () => void
+     onEdit: () => void
++    /**
++     * Por padrão o botão só aparece no hover do card (`group-hover`),
++     * pensado pro Kanban desktop. Em listas (sem "group" ancestral e
++     * sem hover útil no touch), passar `true` pra ficar sempre visível.
++     */
++    alwaysVisible?: boolean
+ }
+ 
+ export function CardMenu({
+@@ -48,6 +54,7 @@ export function CardMenu({
+     availableTags,
+     onOpenDetails,
+     onEdit,
++    alwaysVisible = false,
+ }: CardMenuProps) {
+     const [open, setOpen] = useState(false)
+     const [submenu, setSubmenu] = useState<'root' | 'move' | 'tags'>('root')
+@@ -87,7 +94,11 @@ export function CardMenu({
+                     <Button
+                         variant="ghost"
+                         size="icon"
+-                        className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100 text-[color:var(--muted-foreground)] transition-opacity"
++                        className={`h-5 w-5 shrink-0 text-[color:var(--muted-foreground)] transition-opacity ${
++                            alwaysVisible
++                                ? 'opacity-100'
++                                : 'opacity-0 group-hover:opacity-100'
++                        }`}
+                         aria-label="Ações do card"
+                         onPointerDown={(e) => e.stopPropagation()}
+                         onClick={(e) => e.stopPropagation()}
+diff --git a/components/dashboard/inbox-calendar.tsx b/components/dashboard/inbox-calendar.tsx
+new file mode 100644
+index 0000000..fad6c4d
+--- /dev/null
++++ b/components/dashboard/inbox-calendar.tsx
+@@ -0,0 +1,224 @@
++'use client'
++
++import { useMemo, useState } from 'react'
++import { ChevronLeft, ChevronRight } from 'lucide-react'
++
++import { InboxTaskCard } from '@/components/dashboard/inbox-task-card'
++
++type InboxStage = 'ARRIVED' | 'ORGANIZE' | 'NEXT' | 'ORGANIZED'
++
++interface TaskTag {
++    id: string
++    name: string
++    color: string
++}
++
++interface InboxCalendarTask {
++    id: string
++    title: string
++    description: string | null
++    createdAt: Date
++    plannedDate: Date | null
++    completedAt: Date | null
++    priority: 'LOW' | 'MEDIUM' | 'HIGH'
++    inboxStage: InboxStage
++    tags: TaskTag[]
++}
++
++interface InboxCalendarProps {
++    tasks: InboxCalendarTask[]
++    availableTags: TaskTag[]
++}
++
++function dateKey(date: Date) {
++    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
++        date.getDate()
++    ).padStart(2, '0')}`
++}
++
++function startOfMonth(date: Date) {
++    return new Date(date.getFullYear(), date.getMonth(), 1)
++}
++
++const WEEKDAY_LABELS = ['D', 'S', 'T', 'Q', 'Q', 'S', 'S']
++
++export function InboxCalendar({ tasks, availableTags }: InboxCalendarProps) {
++    const [monthCursor, setMonthCursor] = useState(() => startOfMonth(new Date()))
++    const [selectedDay, setSelectedDay] = useState<string | null>(() =>
++        dateKey(new Date())
++    )
++
++    const tasksByDay = useMemo(() => {
++        const map = new Map<string, InboxCalendarTask[]>()
++
++        for (const task of tasks) {
++            if (!task.plannedDate) continue
++            const key = dateKey(new Date(task.plannedDate))
++            const current = map.get(key) ?? []
++            current.push(task)
++            map.set(key, current)
++        }
++
++        return map
++    }, [tasks])
++
++    const gridDays = useMemo(() => {
++        const first = monthCursor
++        const firstWeekday = first.getDay()
++        const daysInMonth = new Date(
++            first.getFullYear(),
++            first.getMonth() + 1,
++            0
++        ).getDate()
++
++        const days: Array<{ date: Date; inCurrentMonth: boolean }> = []
++
++        for (let i = 0; i < firstWeekday; i++) {
++            const date = new Date(first)
++            date.setDate(date.getDate() - (firstWeekday - i))
++            days.push({ date, inCurrentMonth: false })
++        }
++
++        for (let day = 1; day <= daysInMonth; day++) {
++            days.push({
++                date: new Date(first.getFullYear(), first.getMonth(), day),
++                inCurrentMonth: true,
++            })
++        }
++
++        while (days.length % 7 !== 0) {
++            const last = days[days.length - 1].date
++            const date = new Date(last)
++            date.setDate(date.getDate() + 1)
++            days.push({ date, inCurrentMonth: false })
++        }
++
++        return days
++    }, [monthCursor])
++
++    const todayKey = dateKey(new Date())
++    const selectedTasks = selectedDay ? tasksByDay.get(selectedDay) ?? [] : []
++
++    return (
++        <div className="w-full">
++            <div className="mx-auto w-full max-w-2xl">
++                {/* CABEÇALHO DO MÊS */}
++                <div className="mb-4 flex items-center justify-between">
++                    <button
++                        type="button"
++                        onClick={() =>
++                            setMonthCursor(
++                                (m) => new Date(m.getFullYear(), m.getMonth() - 1, 1)
++                            )
++                        }
++                        className="flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
++                        aria-label="Mês anterior"
++                    >
++                        <ChevronLeft className="size-4" />
++                    </button>
++
++                    <p className="text-sm font-semibold capitalize text-slate-900">
++                        {monthCursor.toLocaleDateString('pt-BR', {
++                            month: 'long',
++                            year: 'numeric',
++                        })}
++                    </p>
++
++                    <button
++                        type="button"
++                        onClick={() =>
++                            setMonthCursor(
++                                (m) => new Date(m.getFullYear(), m.getMonth() + 1, 1)
++                            )
++                        }
++                        className="flex size-9 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"
++                        aria-label="Próximo mês"
++                    >
++                        <ChevronRight className="size-4" />
++                    </button>
++                </div>
++
++                {/* GRID DO CALENDÁRIO */}
++                <div className="grid grid-cols-7 gap-1 text-center">
++                    {WEEKDAY_LABELS.map((label, i) => (
++                        <div
++                            key={i}
++                            className="py-1 text-[11px] font-medium text-slate-400"
++                        >
++                            {label}
++                        </div>
++                    ))}
++
++                    {gridDays.map(({ date, inCurrentMonth }) => {
++                        const key = dateKey(date)
++                        const count = tasksByDay.get(key)?.length ?? 0
++                        const isSelected = key === selectedDay
++                        const isToday = key === todayKey
++
++                        return (
++                            <button
++                                key={key}
++                                type="button"
++                                onClick={() => setSelectedDay(key)}
++                                className={`relative flex aspect-square flex-col items-center justify-center rounded-lg text-sm transition ${
++                                    !inCurrentMonth
++                                        ? 'text-slate-300'
++                                        : isSelected
++                                            ? 'bg-blue-600 text-white'
++                                            : isToday
++                                                ? 'bg-blue-50 text-blue-600'
++                                                : 'text-slate-700 hover:bg-slate-100'
++                                }`}
++                            >
++                                {date.getDate()}
++                                {count > 0 && (
++                                    <span
++                                        className={`mt-0.5 size-1.5 rounded-full ${
++                                            isSelected ? 'bg-white' : 'bg-blue-500'
++                                        }`}
++                                    />
++                                )}
++                            </button>
++                        )
++                    })}
++                </div>
++
++                {/* TAREFAS DO DIA — reaproveita o InboxTaskCard e todas as
++                    ações que ele já expõe (concluir, editar, tags, menu). */}
++                <div className="mt-6">
++                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
++                        {selectedDay
++                            ? new Date(`${selectedDay}T00:00:00`).toLocaleDateString(
++                                'pt-BR',
++                                { day: '2-digit', month: 'long' }
++                            )
++                            : 'Selecione um dia'}
++                    </p>
++
++                    {selectedTasks.length === 0 ? (
++                        <p className="text-sm text-slate-400">
++                            Nenhuma tarefa planejada para este dia.
++                        </p>
++                    ) : (
++                        <div className="flex flex-col gap-3">
++                            {selectedTasks.map((task) => (
++                                <InboxTaskCard
++                                    key={task.id}
++                                    taskId={task.id}
++                                    title={task.title}
++                                    description={task.description}
++                                    createdAt={task.createdAt}
++                                    plannedDate={task.plannedDate}
++                                    completedAt={task.completedAt}
++                                    priority={task.priority}
++                                    tags={task.tags}
++                                    availableTags={availableTags}
++                                />
++                            ))}
++                        </div>
++                    )}
++                </div>
++            </div>
++        </div>
++    )
++}
+diff --git a/components/dashboard/inbox-filters.tsx b/components/dashboard/inbox-filters.tsx
+new file mode 100644
+index 0000000..adbbc55
+--- /dev/null
++++ b/components/dashboard/inbox-filters.tsx
+@@ -0,0 +1,199 @@
++'use client'
++
++import { SlidersHorizontal } from 'lucide-react'
++
++import {
++    Popover,
++    PopoverContent,
++    PopoverTrigger,
++} from '@/components/ui/popover'
++import { Button } from '@/components/ui/button'
++
++export type InboxStage = 'ARRIVED' | 'ORGANIZE' | 'NEXT' | 'ORGANIZED'
++export type InboxPriority = 'LOW' | 'MEDIUM' | 'HIGH'
++
++export interface InboxFilterState {
++    priorities: InboxPriority[]
++    stages: InboxStage[]
++    tagIds: string[]
++}
++
++export const EMPTY_INBOX_FILTERS: InboxFilterState = {
++    priorities: [],
++    stages: [],
++    tagIds: [],
++}
++
++const PRIORITY_LABELS: Record<InboxPriority, string> = {
++    LOW: 'Baixa',
++    MEDIUM: 'Média',
++    HIGH: 'Alta',
++}
++
++const STAGE_LABELS: Record<InboxStage, string> = {
++    ARRIVED: 'Chegou agora',
++    ORGANIZE: 'Para organizar',
++    NEXT: 'Próximos passos',
++    ORGANIZED: 'Organizada',
++}
++
++interface InboxFiltersProps {
++    value: InboxFilterState
++    onChange: (value: InboxFilterState) => void
++    availableTags: Array<{ id: string; name: string; color: string }>
++}
++
++function toggle<T>(list: T[], item: T): T[] {
++    return list.includes(item)
++        ? list.filter((i) => i !== item)
++        : [...list, item]
++}
++
++export function InboxFilters({
++    value,
++    onChange,
++    availableTags,
++}: InboxFiltersProps) {
++    const activeCount =
++        value.priorities.length + value.stages.length + value.tagIds.length
++
++    return (
++        <Popover>
++            <PopoverTrigger asChild>
++                <Button
++                    variant="outline"
++                    className="flex h-11 items-center gap-2 rounded-xl border-slate-200 bg-white px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
++                >
++                    <SlidersHorizontal className="size-4" />
++                    Filtros
++                    {activeCount > 0 && (
++                        <span className="flex size-5 items-center justify-center rounded-full bg-blue-600 text-[11px] font-semibold text-white">
++                            {activeCount}
++                        </span>
++                    )}
++                </Button>
++            </PopoverTrigger>
++
++            <PopoverContent align="end" className="w-72 space-y-4 p-4">
++                <div>
++                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
++                        Prioridade
++                    </p>
++                    <div className="flex flex-wrap gap-2">
++                        {(Object.keys(PRIORITY_LABELS) as InboxPriority[]).map(
++                            (priority) => {
++                                const active = value.priorities.includes(priority)
++                                return (
++                                    <button
++                                        key={priority}
++                                        type="button"
++                                        onClick={() =>
++                                            onChange({
++                                                ...value,
++                                                priorities: toggle(
++                                                    value.priorities,
++                                                    priority
++                                                ),
++                                            })
++                                        }
++                                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
++                                            active
++                                                ? 'border-slate-900 bg-slate-900 text-white'
++                                                : 'border-slate-200 text-slate-600 hover:bg-slate-50'
++                                        }`}
++                                    >
++                                        {PRIORITY_LABELS[priority]}
++                                    </button>
++                                )
++                            }
++                        )}
++                    </div>
++                </div>
++
++                <div>
++                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
++                        Estágio
++                    </p>
++                    <div className="flex flex-wrap gap-2">
++                        {(Object.keys(STAGE_LABELS) as InboxStage[]).map(
++                            (stage) => {
++                                const active = value.stages.includes(stage)
++                                return (
++                                    <button
++                                        key={stage}
++                                        type="button"
++                                        onClick={() =>
++                                            onChange({
++                                                ...value,
++                                                stages: toggle(
++                                                    value.stages,
++                                                    stage
++                                                ),
++                                            })
++                                        }
++                                        className={`rounded-full border px-3 py-1.5 text-xs font-medium transition ${
++                                            active
++                                                ? 'border-slate-900 bg-slate-900 text-white'
++                                                : 'border-slate-200 text-slate-600 hover:bg-slate-50'
++                                        }`}
++                                    >
++                                        {STAGE_LABELS[stage]}
++                                    </button>
++                                )
++                            }
++                        )}
++                    </div>
++                </div>
++
++                {availableTags.length > 0 && (
++                    <div>
++                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
++                            Tags
++                        </p>
++                        <div className="flex flex-wrap gap-2">
++                            {availableTags.map((t) => {
++                                const active = value.tagIds.includes(t.id)
++                                return (
++                                    <button
++                                        key={t.id}
++                                        type="button"
++                                        onClick={() =>
++                                            onChange({
++                                                ...value,
++                                                tagIds: toggle(
++                                                    value.tagIds,
++                                                    t.id
++                                                ),
++                                            })
++                                        }
++                                        className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
++                                            active
++                                                ? 'border-slate-900 bg-slate-900 text-white'
++                                                : 'border-slate-200 text-slate-600 hover:bg-slate-50'
++                                        }`}
++                                    >
++                                        <span
++                                            className="size-2 rounded-full"
++                                            style={{ backgroundColor: t.color }}
++                                        />
++                                        {t.name}
++                                    </button>
++                                )
++                            })}
++                        </div>
++                    </div>
++                )}
++
++                {activeCount > 0 && (
++                    <button
++                        type="button"
++                        onClick={() => onChange(EMPTY_INBOX_FILTERS)}
++                        className="text-xs font-medium text-slate-400 hover:text-slate-700"
++                    >
++                        Limpar filtros
++                    </button>
++                )}
++            </PopoverContent>
++        </Popover>
++    )
++}
+diff --git a/components/dashboard/inbox-list.tsx b/components/dashboard/inbox-list.tsx
+new file mode 100644
+index 0000000..6b800d4
+--- /dev/null
++++ b/components/dashboard/inbox-list.tsx
+@@ -0,0 +1,67 @@
++'use client'
++
++import { InboxTaskCard } from '@/components/dashboard/inbox-task-card'
++
++type InboxStage = 'ARRIVED' | 'ORGANIZE' | 'NEXT' | 'ORGANIZED'
++
++const STAGE_LABELS: Record<InboxStage, string> = {
++    ARRIVED: 'Chegou agora',
++    ORGANIZE: 'Para organizar',
++    NEXT: 'Próximos passos',
++    ORGANIZED: 'Organizada',
++}
++
++interface TaskTag {
++    id: string
++    name: string
++    color: string
++}
++
++interface InboxListTask {
++    id: string
++    title: string
++    description: string | null
++    createdAt: Date
++    plannedDate: Date | null
++    completedAt: Date | null
++    priority: 'LOW' | 'MEDIUM' | 'HIGH'
++    inboxStage: InboxStage
++    tags: TaskTag[]
++}
++
++interface InboxListProps {
++    tasks: InboxListTask[]
++    availableTags: TaskTag[]
++}
++
++export function InboxList({ tasks, availableTags }: InboxListProps) {
++    if (tasks.length === 0) {
++        return (
++            <div className="flex min-h-40 items-center justify-center">
++                <p className="text-sm text-slate-400">
++                    Nenhum item encontrado.
++                </p>
++            </div>
++        )
++    }
++
++    return (
++        <div className="flex w-full flex-col gap-3">
++            {tasks.map((item) => (
++                <InboxTaskCard
++                    key={item.id}
++                    taskId={item.id}
++                    title={item.title}
++                    description={item.description}
++                    createdAt={item.createdAt}
++                    plannedDate={item.plannedDate}
++                    completedAt={item.completedAt}
++                    priority={item.priority}
++                    tags={item.tags}
++                    availableTags={availableTags}
++                    stageLabel={STAGE_LABELS[item.inboxStage]}
++                />
++            ))}
++        </div>
++    )
++}
+diff --git a/components/dashboard/inbox-task-card.tsx b/components/dashboard/inbox-task-card.tsx
+index 89a3563..0647038 100644
+--- a/components/dashboard/inbox-task-card.tsx
++++ b/components/dashboard/inbox-task-card.tsx
+@@ -22,6 +22,7 @@ interface InboxTaskCardProps {
+     priority: "LOW" | "MEDIUM" | "HIGH";
+     tags?: TaskTag[];
+     availableTags: TaskTag[];
++    stageLabel?: string;
+ }
+ 
+ export function InboxTaskCard({
+@@ -34,6 +35,7 @@ export function InboxTaskCard({
+     priority,
+     tags = [],
+     availableTags,
++    stageLabel,
+ }: InboxTaskCardProps) {
+     return (
+         <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:border-blue-200 hover:shadow-md">
+@@ -93,8 +95,14 @@ export function InboxTaskCard({
+                 </div>
+             )}
+ 
+-            {/* DATA */}
+-            <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-400">
++            {/* DATA + ESTÁGIO */}
++            <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-400">
++                {stageLabel && (
++                    <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-500">
++                        {stageLabel}
++                    </span>
++                )}
++
+                 {plannedDate ? (
+                     <>
+                         <CalendarDays className="size-3.5" />
+diff --git a/components/dashboard/inbox-view.tsx b/components/dashboard/inbox-view.tsx
+new file mode 100644
+index 0000000..9c58076
+--- /dev/null
++++ b/components/dashboard/inbox-view.tsx
+@@ -0,0 +1,139 @@
++'use client'
++
++import { Suspense, useMemo, useState } from 'react'
++import { Search } from 'lucide-react'
++
++import { Task } from '@/db/schema/task'
++
++import { InboxBoard } from '@/components/dashboard/inbox-board'
++import { InboxList } from '@/components/dashboard/inbox-list'
++import { InboxCalendar } from '@/components/dashboard/inbox-calendar'
++import { NewInboxTaskButton } from '@/components/dashboard/new-inbox-task-button'
++import {
++    InboxFilters,
++    EMPTY_INBOX_FILTERS,
++    type InboxFilterState,
++} from '@/components/dashboard/inbox-filters'
++
++import { ViewSwitcher } from '@/components/shared/view-switcher'
++import { useViewMode } from '@/components/shared/use-view-mode'
++
++interface TaskTag {
++    id: string
++    name: string
++    color: string
++}
++
++export interface InboxTaskWithTags extends Task {
++    tags: TaskTag[]
++}
++
++interface InboxViewProps {
++    tasks: InboxTaskWithTags[]
++    availableTags: TaskTag[]
++}
++
++/**
++ * `useViewMode` usa `useSearchParams`, exigindo Suspense boundary —
++ * mesmo motivo/padrão de components/board/board-view.tsx.
++ */
++export function InboxView(props: InboxViewProps) {
++    return (
++        <Suspense
++            fallback={
++                <InboxBoard tasks={props.tasks} availableTags={props.availableTags} />
++            }
++        >
++            <InboxViewInner {...props} />
++        </Suspense>
++    )
++}
++
++function InboxViewInner({ tasks, availableTags }: InboxViewProps) {
++    const { view, setView, isMobile } = useViewMode()
++    const [search, setSearch] = useState('')
++    const [filters, setFilters] = useState<InboxFilterState>(EMPTY_INBOX_FILTERS)
++
++    const filteredTasks = useMemo(() => {
++        const term = search.trim().toLowerCase()
++
++        return tasks.filter((task) => {
++            if (term) {
++                const matchesTitle = task.title.toLowerCase().includes(term)
++                const matchesDescription = (task.description ?? '')
++                    .toLowerCase()
++                    .includes(term)
++
++                if (!matchesTitle && !matchesDescription) return false
++            }
++
++            if (
++                filters.priorities.length > 0 &&
++                !filters.priorities.includes(task.priority)
++            ) {
++                return false
++            }
++
++            if (
++                filters.stages.length > 0 &&
++                !filters.stages.includes(task.inboxStage)
++            ) {
++                return false
++            }
++
++            if (filters.tagIds.length > 0) {
++                const taskTagIds = task.tags.map((t) => t.id)
++                const hasMatch = filters.tagIds.some((id) =>
++                    taskTagIds.includes(id)
++                )
++                if (!hasMatch) return false
++            }
++
++            return true
++        })
++    }, [tasks, search, filters])
++
++    return (
++        <>
++            {/* TOOLBAR */}
++            <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
++                <ViewSwitcher view={view} onChange={setView} isMobile={isMobile} />
++
++                <div className="flex flex-1 flex-wrap justify-end gap-3">
++                    <div className="flex h-11 w-full max-w-[320px] items-center gap-2 rounded-xl border border-slate-200 bg-white px-4">
++                        <Search className="size-4 shrink-0 text-slate-400" />
++
++                        <input
++                            type="text"
++                            value={search}
++                            onChange={(e) => setSearch(e.target.value)}
++                            placeholder="Buscar na caixa de entrada..."
++                            className="h-full w-full bg-transparent text-base text-slate-700 outline-none placeholder:text-slate-400 sm:text-sm"
++                        />
++                    </div>
++
++                    <InboxFilters
++                        value={filters}
++                        onChange={setFilters}
++                        availableTags={availableTags}
++                    />
++
++                    <NewInboxTaskButton tags={availableTags} />
++                </div>
++            </div>
++
++            {/* CONTEÚDO */}
++            {view === 'board' && (
++                <InboxBoard tasks={filteredTasks} availableTags={availableTags} />
++            )}
++
++            {view === 'list' && (
++                <InboxList tasks={filteredTasks} availableTags={availableTags} />
++            )}
++
++            {view === 'calendar' && (
++                <InboxCalendar tasks={filteredTasks} availableTags={availableTags} />
++            )}
++        </>
++    )
++}
+diff --git a/components/shared/use-media-query.ts b/components/shared/use-media-query.ts
+new file mode 100644
+index 0000000..fa75056
+--- /dev/null
++++ b/components/shared/use-media-query.ts
+@@ -0,0 +1,53 @@
++'use client'
++
++import { useSyncExternalStore } from 'react'
++
++const MOBILE_BREAKPOINT_QUERY = '(max-width: 767px)'
++
++function subscribe(callback: () => void) {
++    const mediaQuery = window.matchMedia(MOBILE_BREAKPOINT_QUERY)
++    mediaQuery.addEventListener('change', callback)
++    return () => mediaQuery.removeEventListener('change', callback)
++}
++
++function getSnapshot() {
++    return window.matchMedia(MOBILE_BREAKPOINT_QUERY).matches
++}
++
++/**
++ * Servidor (e primeira pintura no cliente, antes de hidratar) sempre
++ * assume desktop — bate com o HTML do servidor e evita hydration
++ * mismatch. `useSyncExternalStore` é a forma recomendada pelo React
++ * de ler um valor "só existe no cliente" sem o anti-padrão de
++ * `setState` dentro de `useEffect`.
++ */
++function getServerSnapshot() {
++    return false
++}
++
++/**
++ * Detecta se a viewport atual é mobile (<768px, mesmo breakpoint `md`
++ * do Tailwind usado no resto do projeto).
++ */
++export function useIsMobile() {
++    const isMobile = useSyncExternalStore(
++        subscribe,
++        getSnapshot,
++        getServerSnapshot
++    )
++
++    // "mounted" continua útil pra quem precisa saber se já passou da
++    // primeira pintura (ex.: para não aplicar a correção de view antes
++    // da hidratação). Deriva do mesmo store: no servidor/primeira
++    // pintura sempre há uma leitura pendente; usamos um segundo
++    // useSyncExternalStore fixo em `true` só depois do primeiro commit
++    // no cliente não é necessário — quem consome isMobile já trata
++    // "false" como o estado inicial seguro.
++    const mounted = useSyncExternalStore(
++        () => () => {},
++        () => true,
++        () => false
++    )
++
++    return { isMobile, mounted }
++}
+diff --git a/components/shared/use-view-mode.ts b/components/shared/use-view-mode.ts
+new file mode 100644
+index 0000000..1ae3588
+--- /dev/null
++++ b/components/shared/use-view-mode.ts
+@@ -0,0 +1,59 @@
++'use client'
++
++import { useCallback } from 'react'
++import { usePathname, useRouter, useSearchParams } from 'next/navigation'
++
++import { useIsMobile } from './use-media-query'
++import type { BoardViewMode } from './view-switcher'
++
++const VALID_VIEWS: BoardViewMode[] = ['board', 'list', 'calendar']
++
++/**
++ * Resolve e atualiza a view ativa (`board` | `list` | `calendar`) via
++ * `?view=` na URL, com defaults diferentes por dispositivo:
++ *
++ * - Desktop sem parâmetro → `board`.
++ * - Mobile sem parâmetro → `list`.
++ * - Mobile recebendo `?view=board` → tratado como `list` (o Kanban
++ *   horizontal nunca é exibido no mobile).
++ *
++ * Usa `router.replace` (não `push`) para não empilhar entradas de
++ * histórico a cada troca de aba.
++ */
++export function useViewMode() {
++    const router = useRouter()
++    const pathname = usePathname()
++    const searchParams = useSearchParams()
++    const { isMobile, mounted } = useIsMobile()
++
++    const rawView = searchParams.get('view')
++
++    const isValidView = (value: string | null): value is BoardViewMode =>
++        value !== null && VALID_VIEWS.includes(value as BoardViewMode)
++
++    let view: BoardViewMode = isValidView(rawView)
++        ? rawView
++        : isMobile
++            ? 'list'
++            : 'board'
++
++    // Antes de montar, `isMobile` é sempre `false` (SSR-safe) — então
++    // o servidor e a primeira renderização do cliente concordam. Após
++    // montar, se for mobile e a view resolvida for `board`, força `list`.
++    if (mounted && isMobile && view === 'board') {
++        view = 'list'
++    }
++
++    const setView = useCallback(
++        (next: BoardViewMode) => {
++            const params = new URLSearchParams(searchParams.toString())
++            params.set('view', next)
++            router.replace(`${pathname}?${params.toString()}`, {
++                scroll: false,
++            })
++        },
++        [pathname, router, searchParams]
++    )
++
++    return { view, setView, isMobile, mounted }
++}
+diff --git a/components/shared/view-switcher.tsx b/components/shared/view-switcher.tsx
+new file mode 100644
+index 0000000..ed384dc
+--- /dev/null
++++ b/components/shared/view-switcher.tsx
+@@ -0,0 +1,50 @@
++'use client'
++
++export type BoardViewMode = 'board' | 'list' | 'calendar'
++
++interface ViewSwitcherProps {
++    view: BoardViewMode
++    onChange: (view: BoardViewMode) => void
++    isMobile: boolean
++}
++
++/**
++ * Alterna entre Quadro / Lista / Calendário.
++ *
++ * No mobile, "Quadro" não é exibido (o Kanban horizontal não faz
++ * sentido em telas estreitas) — só Lista e Calendário aparecem, e
++ * Lista é o padrão. A troca de view é responsabilidade de quem chama
++ * (via `onChange`), tipicamente atualizando `?view=` na URL.
++ */
++export function ViewSwitcher({ view, onChange, isMobile }: ViewSwitcherProps) {
++    const options: Array<{ value: BoardViewMode; label: string }> = isMobile
++        ? [
++            { value: 'list', label: 'Lista' },
++            { value: 'calendar', label: 'Calendário' },
++        ]
++        : [
++            { value: 'board', label: 'Quadro' },
++            { value: 'list', label: 'Lista' },
++            { value: 'calendar', label: 'Calendário' },
++        ]
++
++    return (
++        <div className="flex rounded-xl border border-slate-200 bg-white p-1">
++            {options.map((option) => (
++                <button
++                    key={option.value}
++                    type="button"
++                    onClick={() => onChange(option.value)}
++                    aria-pressed={view === option.value}
++                    className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
++                        view === option.value
++                            ? 'bg-blue-50 text-blue-600'
++                            : 'text-slate-500 hover:text-slate-900'
++                    }`}
++                >
++                    {option.label}
++                </button>
++            ))}
++        </div>
++    )
++}
+diff --git a/components/ui/sheet.tsx b/components/ui/sheet.tsx
+index 9c32ca5..1ddc0bb 100644
+--- a/components/ui/sheet.tsx
++++ b/components/ui/sheet.tsx
+@@ -35,12 +35,12 @@ SheetOverlay.displayName = SheetPrimitive.Overlay.displayName
+  * praticamente tela cheia no mobile (sm: define a transição).
+  */
+ const sheetVariants = cva(
+-  "fixed z-50 gap-4 bg-white p-0 shadow-xl transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=open]:duration-300",
++  "fixed z-50 flex flex-col gap-0 overflow-hidden bg-white p-0 shadow-xl transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:duration-200 data-[state=open]:duration-300",
+   {
+     variants: {
+       side: {
+         right:
+-          "inset-y-0 right-0 h-full w-full border-l border-slate-200 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-md",
++          "inset-y-0 right-0 h-dvh w-full max-w-full border-l border-slate-200 data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right sm:max-w-md",
+       },
+     },
+     defaultVariants: {

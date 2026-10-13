@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useAction } from 'next-safe-action/hooks'
-import { Loader2, Plus, Trash2, Check } from 'lucide-react'
+import dayjs from 'dayjs'
+import 'dayjs/locale/pt-br'
+import { Loader2, Plus, Trash2, Check, MessageSquareText, RefreshCw } from 'lucide-react'
 
 import {
     Sheet,
@@ -19,6 +21,7 @@ import {
     createChecklistItem,
     toggleChecklistItem,
     deleteChecklistItem,
+    getCardObservations,
 } from '@/app/(app)/board/actions'
 
 import { BoardCard, CardTagOption } from './use-board-dnd'
@@ -109,6 +112,11 @@ export function CardDetailsPanel({
             <SheetContent key={card.id}>
                 <SheetHeader className="shrink-0">
                     <TitleField card={card} />
+                    {card.requirementTitle && (
+                        <p className="text-xs text-blue-700">
+                            Originado do requisito: {card.requirementTitle}
+                        </p>
+                    )}
                 </SheetHeader>
 
                 <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 py-4">
@@ -117,9 +125,82 @@ export function CardDetailsPanel({
                     <DueDateField card={card} />
                     <DescriptionField card={card} />
                     <ChecklistField card={card} />
+                    <VisitorObservationsField cardId={card.id} />
                 </div>
             </SheetContent>
         </Sheet>
+    )
+}
+
+type VisitorObservation = {
+    id: string
+    visitorName: string | null
+    content: string
+    createdAt: string
+}
+
+function VisitorObservationsField({ cardId }: { cardId: string }) {
+    const [observations, setObservations] = useState<VisitorObservation[]>([])
+    const [loadError, setLoadError] = useState(false)
+    const { execute, isExecuting } = useAction(getCardObservations, {
+        onExecute: () => setLoadError(false),
+        onSuccess: ({ data }) => setObservations(data),
+        onError: () => setLoadError(true),
+    })
+
+    useEffect(() => {
+        execute({ cardId })
+    }, [cardId, execute])
+
+    return (
+        <section className="mb-6 border-t border-slate-200 pt-5">
+            <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    <MessageSquareText className="size-4" /> Observações do visitante
+                </h3>
+                <button
+                    type="button"
+                    onClick={() => execute({ cardId })}
+                    disabled={isExecuting}
+                    aria-label="Atualizar observações"
+                    className="rounded-md p-1.5 text-slate-500 transition hover:bg-slate-100 disabled:opacity-50"
+                >
+                    <RefreshCw className={`size-4 ${isExecuting ? 'animate-spin' : ''}`} />
+                </button>
+            </div>
+
+            {isExecuting ? (
+                <p className="flex items-center gap-2 text-sm text-slate-500" role="status">
+                    <Loader2 className="size-4 animate-spin" /> Carregando observações...
+                </p>
+            ) : loadError ? (
+                <p className="text-sm text-destructive" role="alert">
+                    Não foi possível carregar as observações. Tente atualizar.
+                </p>
+            ) : observations.length === 0 ? (
+                <p className="text-sm text-slate-500">
+                    Ainda não há observações de visitantes neste card.
+                </p>
+            ) : (
+                <ul className="space-y-3">
+                    {observations.map((observation) => (
+                        <li key={observation.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                            <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                                <p className="text-sm font-medium text-slate-800">
+                                    Visitante{observation.visitorName ? ` · nome informado: ${observation.visitorName}` : ''}
+                                </p>
+                                <time dateTime={observation.createdAt} className="text-xs text-slate-500">
+                                    {dayjs(observation.createdAt).locale('pt-br').format('D [de] MMM [de] YYYY, HH:mm')}
+                                </time>
+                            </div>
+                            <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-slate-700">
+                                {observation.content}
+                            </p>
+                        </li>
+                    ))}
+                </ul>
+            )}
+        </section>
     )
 }
 

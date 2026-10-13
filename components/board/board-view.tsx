@@ -26,6 +26,7 @@ import { CreateColumnButton } from './create-column-button'
 import { CardDetailsPanel } from './card-details-panel'
 import { BoardList } from './board-list'
 import { BoardCalendar } from './board-calendar'
+import { BoardShareDialog } from './board-share-dialog'
 
 import {
     useBoardDnd,
@@ -35,6 +36,12 @@ import {
 
 import { ViewSwitcher } from '@/components/shared/view-switcher'
 import { useViewMode } from '@/components/shared/use-view-mode'
+import { WorkManagement } from './work-management'
+import { Client } from '@/db/schema/client'
+import { Project } from '@/db/schema/project'
+import { RequirementSurvey } from '@/db/schema/requirement-survey'
+import { ProjectRequirement } from '@/db/schema/project-requirement'
+import { Meeting } from '@/db/schema/meeting'
 
 interface BoardViewProps {
     board: Board
@@ -42,6 +49,14 @@ interface BoardViewProps {
     availableTags: CardTagOption[]
     priorityCardsCount: number
     hasPriorityTag: boolean
+    workData: {
+        clients: Client[]
+        projects: Project[]
+        surveys: RequirementSurvey[]
+        requirements: ProjectRequirement[]
+        meetings: Meeting[]
+        linkedRequirementIds: string[]
+    }
 }
 
 /**
@@ -75,10 +90,12 @@ function BoardViewSkeleton({ columns }: { columns: ColumnWithCards[] }) {
 }
 
 function BoardViewInner({
+    board,
     columns: initialColumns,
     availableTags,
     priorityCardsCount,
     hasPriorityTag,
+    workData,
 }: BoardViewProps) {
     /**
      * Impede o DndContext de ser renderizado no servidor.
@@ -90,6 +107,7 @@ function BoardViewInner({
      * causando Hydration Mismatch.
      */
     const [mounted, setMounted] = useState(false)
+    const [activeArea, setActiveArea] = useState<'projects' | 'board'>('projects')
 
     useEffect(() => {
         setMounted(true)
@@ -191,6 +209,10 @@ function BoardViewInner({
             0
         )
 
+    if (activeArea === 'projects') {
+        return <WorkManagement data={workData} onBoard={() => setActiveArea('board')} />
+    }
+
     return (
         <div className="flex h-full min-w-0 flex-col bg-slate-50">
 
@@ -278,9 +300,19 @@ function BoardViewInner({
                 {/* TOOLBAR */}
                 <div className="mt-4 flex flex-col gap-3 border-t border-slate-200 pt-4 lg:flex-row lg:items-center lg:justify-between">
 
+                    <button
+                        type="button"
+                        onClick={() => setActiveArea('projects')}
+                        className="w-fit rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100"
+                    >
+                        Projetos · Clientes · Requisitos · Reuniões
+                    </button>
+
                     <ViewSwitcher view={view} onChange={setView} isMobile={isMobile} />
 
                     <div className="flex flex-wrap gap-3">
+
+                        <BoardShareDialog boardId={board.id} />
 
                         {/* BUSCA — funciona nas 3 views, sobre os mesmos dados já carregados */}
                         <input
