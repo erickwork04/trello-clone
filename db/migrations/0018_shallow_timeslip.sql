@@ -1,0 +1,1 @@
+ALTER TABLE "board_card_observation" ADD COLUMN "author_token_hash" text;

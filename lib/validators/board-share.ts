@@ -16,3 +16,12 @@ export const publicObservationInputSchema = z.object({
         .min(1, 'Escreva uma observação antes de enviar.')
         .max(2000, 'A observação deve ter até 2.000 caracteres.'),
 })
+
+export const observationIdSchema = z.object({ id: id })
+
+export const observationUpdateSchema = z.object({
+    id,
+    content: z.string().trim().min(1, 'Escreva uma observação antes de salvar.').max(2000, 'A observação deve ter até 2.000 caracteres.'),
+})
+
+export const publicObservationUpdateSchema = observationUpdateSchema.pick({ content: true })

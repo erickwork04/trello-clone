@@ -24,6 +24,10 @@ import {
     toggleChecklistItemSchema,
     updateCardDetailsSchema,
 } from '@/lib/validators/card'
+import {
+    observationIdSchema,
+    observationUpdateSchema,
+} from '@/lib/validators/board-share'
 
 const createColumnSchema = z.object({
     title: columnTitleSchema,
@@ -70,6 +74,9 @@ const getCardObservationsSchema = z.object({
     cardId: z.string().min(1),
 })
 
+const updateVisitorObservationSchema = observationUpdateSchema
+const deleteVisitorObservationSchema = observationIdSchema
+
 export const getCardObservations = authBoardActionClient
     .inputSchema(getCardObservationsSchema)
     .action(async ({ parsedInput, ctx }) => {
@@ -108,6 +115,51 @@ export const getCardObservations = authBoardActionClient
             ...observation,
             createdAt: observation.createdAt.toISOString(),
         }))
+    })
+
+export const updateVisitorObservation = authBoardActionClient
+    .inputSchema(updateVisitorObservationSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const [ownedObservation] = await db
+            .select({ id: boardCardObservation.id })
+            .from(boardCardObservation)
+            .innerJoin(card, eq(boardCardObservation.cardId, card.id))
+            .innerJoin(boardColumn, eq(card.columnId, boardColumn.id))
+            .where(and(
+                eq(boardCardObservation.id, parsedInput.id),
+                eq(boardCardObservation.boardId, ctx.boardId),
+                eq(boardColumn.boardId, ctx.boardId)
+            ))
+            .limit(1)
+        if (!ownedObservation) throw new Error('Observação não encontrada neste board.')
+
+        await db.update(boardCardObservation)
+            .set({ content: parsedInput.content })
+            .where(eq(boardCardObservation.id, parsedInput.id))
+        revalidatePath('/board')
+        return { id: parsedInput.id, content: parsedInput.content }
+    })
+
+export const deleteVisitorObservation = authBoardActionClient
+    .inputSchema(deleteVisitorObservationSchema)
+    .action(async ({ parsedInput, ctx }) => {
+        const [ownedObservation] = await db
+            .select({ id: boardCardObservation.id })
+            .from(boardCardObservation)
+            .innerJoin(card, eq(boardCardObservation.cardId, card.id))
+            .innerJoin(boardColumn, eq(card.columnId, boardColumn.id))
+            .where(and(
+                eq(boardCardObservation.id, parsedInput.id),
+                eq(boardCardObservation.boardId, ctx.boardId),
+                eq(boardColumn.boardId, ctx.boardId)
+            ))
+            .limit(1)
+        if (!ownedObservation) throw new Error('Observação não encontrada neste board.')
+
+        await db.delete(boardCardObservation)
+            .where(eq(boardCardObservation.id, parsedInput.id))
+        revalidatePath('/board')
+        return { id: parsedInput.id }
     })
 
 export const createColumn = authBoardActionClient
@@ -558,13 +610,14 @@ export const createChecklistItem = authBoardActionClient
 
         const nextPosition = (result?.maxPos ?? -1) + 1
 
-        await db.insert(cardChecklistItem).values({
+        const [item] = await db.insert(cardChecklistItem).values({
             cardId: parsedInput.cardId,
             title: parsedInput.title,
             position: nextPosition,
-        })
+        }).returning()
 
         revalidatePath('/board')
+        return item
     })
 
 export const toggleChecklistItem = authBoardActionClient
@@ -585,12 +638,14 @@ export const toggleChecklistItem = authBoardActionClient
 
         if (!row) throw new Error('Item não encontrado.')
 
-        await db
+        const [item] = await db
             .update(cardChecklistItem)
             .set({ completed: parsedInput.completed })
             .where(eq(cardChecklistItem.id, parsedInput.id))
+            .returning({ id: cardChecklistItem.id, completed: cardChecklistItem.completed })
 
         revalidatePath('/board')
+        return item
     })
 
 export const deleteChecklistItem = authBoardActionClient
@@ -616,4 +671,5 @@ export const deleteChecklistItem = authBoardActionClient
             .where(eq(cardChecklistItem.id, parsedInput.id))
 
         revalidatePath('/board')
+        return { id: parsedInput.id }
     })

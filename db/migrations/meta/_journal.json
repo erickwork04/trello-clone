@@ -127,6 +127,13 @@
       "when": 1791855545113,
       "tag": "0017_handy_dark_beast",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792359391457,
+      "tag": "0018_shallow_timeslip",
+      "breakpoints": true
     }
   ]
 }

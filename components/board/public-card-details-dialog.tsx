@@ -3,7 +3,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import dayjs from 'dayjs'
 import 'dayjs/locale/pt-br'
-import { CalendarDays, CheckCircle2, Circle, LoaderCircle, Send } from 'lucide-react'
+import { CalendarDays, CheckCircle2, Circle, LoaderCircle, Send, Trash2 } from 'lucide-react'
 import {
     Dialog,
     DialogContent,
@@ -18,6 +18,20 @@ type Observation = {
     visitorName: string | null
     content: string
     createdAt: string
+    canEdit?: boolean
+}
+
+async function readApiResponse<T extends object>(response: Response, fallback: string): Promise<T> {
+    const body = await response.text()
+    let result: (T & { message?: string }) | null = null
+    try {
+        result = body ? JSON.parse(body) as T & { message?: string } : null
+    } catch {
+        throw new Error(`${fallback} (resposta inválida do servidor, HTTP ${response.status}).`)
+    }
+    if (!result) throw new Error(`${fallback} (resposta vazia do servidor, HTTP ${response.status}).`)
+    if (!response.ok) throw new Error(result.message ?? `${fallback} (HTTP ${response.status}).`)
+    return result
 }
 
 function displayDate(value: string) {
@@ -42,6 +56,8 @@ export function PublicCardDetailsDialog({
     const [loading, setLoading] = useState(true)
     const [sending, setSending] = useState(false)
     const [feedback, setFeedback] = useState<{ kind: 'success' | 'error'; text: string } | null>(null)
+    const [editingId, setEditingId] = useState<string | null>(null)
+    const [editContent, setEditContent] = useState('')
     const endpoint = `/api/public/board-share/${encodeURIComponent(token)}/cards/${encodeURIComponent(card.id)}/observations`
     const completed = card.checklistItems.filter((item) => item.completed).length
 
@@ -49,8 +65,7 @@ export function PublicCardDetailsDialog({
         const controller = new AbortController()
         fetch(endpoint, { cache: 'no-store', signal: controller.signal })
             .then(async (response) => {
-                const result = await response.json()
-                if (!response.ok) throw new Error(result.message ?? 'Não foi possível carregar as observações.')
+                const result = await readApiResponse<{ observations: Observation[] }>(response, 'Não foi possível carregar as observações.')
                 setObservations(result.observations)
             })
             .catch((error: unknown) => {
@@ -85,8 +100,7 @@ export function PublicCardDetailsDialog({
                     visitorName: visitorName.trim() || undefined,
                 }),
             })
-            const result = await response.json()
-            if (!response.ok) throw new Error(result.message ?? 'Não foi possível enviar a observação.')
+            const result = await readApiResponse<{ observation: Observation }>(response, 'Não foi possível enviar a observação.')
             setObservations((current) => [result.observation, ...current])
             setContent('')
             setFeedback({ kind: 'success', text: 'Observação enviada.' })
@@ -95,6 +109,46 @@ export function PublicCardDetailsDialog({
                 kind: 'error',
                 text: error instanceof Error ? error.message : 'Não foi possível enviar a observação. Tente novamente.',
             })
+        } finally {
+            setSending(false)
+        }
+    }
+
+    async function saveEdit(id: string) {
+        setSending(true)
+        setFeedback(null)
+        try {
+            const response = await fetch(endpoint, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id, content: editContent }),
+            })
+            const result = await readApiResponse<{ observation: Observation }>(response, 'Não foi possível salvar a observação.')
+            setObservations((current) => current.map((item) => item.id === id ? { ...item, content: result.observation.content } : item))
+            setEditingId(null)
+            setFeedback({ kind: 'success', text: 'Observação atualizada.' })
+        } catch (error) {
+            setFeedback({ kind: 'error', text: error instanceof Error ? error.message : 'Não foi possível salvar a observação.' })
+        } finally {
+            setSending(false)
+        }
+    }
+
+    async function deleteObservation(id: string) {
+        if (!window.confirm('Excluir esta observação?')) return
+        setSending(true)
+        setFeedback(null)
+        try {
+            const response = await fetch(endpoint, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id }),
+            })
+            await readApiResponse<{ id: string }>(response, 'Não foi possível excluir a observação.')
+            setObservations((current) => current.filter((item) => item.id !== id))
+            setFeedback({ kind: 'success', text: 'Observação excluída.' })
+        } catch (error) {
+            setFeedback({ kind: 'error', text: error instanceof Error ? error.message : 'Não foi possível excluir a observação.' })
         } finally {
             setSending(false)
         }
@@ -148,7 +202,7 @@ export function PublicCardDetailsDialog({
                         <label className="block text-sm font-medium">
                             Seu nome <span className="font-normal text-muted-foreground">(opcional)</span>
                             <input value={visitorName} onChange={(event) => setVisitorName(event.target.value)} maxLength={80} autoComplete="name" className="mt-1.5 min-h-10 w-full rounded-lg border border-input bg-card px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring" placeholder="Como devemos identificar você?" />
-                            <span className="mt-1 block text-xs text-muted-foreground">Nome informado pelo visitante; não é uma identidade verificada.</span>
+                            <span className="mt-1 block text-xs text-muted-foreground">Nome não verificado. Você poderá editar suas observações neste navegador.</span>
                         </label>
                         <label className="block text-sm font-medium">
                             Observação
@@ -172,7 +226,17 @@ export function PublicCardDetailsDialog({
                                     <p className="text-sm font-semibold">Visitante{item.visitorName ? ` · nome informado: ${item.visitorName}` : ''}</p>
                                     <time dateTime={item.createdAt} className="text-xs text-muted-foreground">{displayDate(item.createdAt)}</time>
                                 </div>
-                                <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{item.content}</p>
+                                {editingId === item.id ? <div className="mt-2 space-y-2">
+                                    <textarea value={editContent} onChange={(event) => setEditContent(event.target.value)} maxLength={2000} rows={3} className="w-full resize-y rounded-lg border border-input bg-background px-3 py-2 text-sm leading-6" aria-label="Editar sua observação" />
+                                    <div className="flex justify-end gap-2">
+                                        <button type="button" onClick={() => setEditingId(null)} disabled={sending} className="rounded-lg px-3 py-1.5 text-sm text-muted-foreground">Cancelar</button>
+                                        <button type="button" onClick={() => saveEdit(item.id)} disabled={sending || !editContent.trim()} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground disabled:opacity-50">Salvar</button>
+                                    </div>
+                                </div> : <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6">{item.content}</p>}
+                                {item.canEdit && editingId !== item.id && <div className="mt-2 flex justify-end gap-1">
+                                    <button type="button" onClick={() => { setEditContent(item.content); setEditingId(item.id) }} className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted">Editar</button>
+                                    <button type="button" onClick={() => deleteObservation(item.id)} disabled={sending} aria-label="Excluir sua observação" className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-destructive disabled:opacity-50"><Trash2 className="size-4" /></button>
+                                </div>}
                             </li>)}
                         </ul> : <p className="mt-3 text-sm text-muted-foreground">Ainda não há observações. Você pode adicionar a primeira acima.</p>}
                     </div>

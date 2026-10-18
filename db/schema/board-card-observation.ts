@@ -13,6 +13,7 @@ export const boardCardObservation = pgTable(
             .notNull()
             .references(() => card.id, { onDelete: 'cascade' }),
         visitorName: text('visitor_name'),
+        authorTokenHash: text('author_token_hash'),
         content: text('content').notNull(),
         createdAt: timestamp('created_at').defaultNow().notNull(),
     },
